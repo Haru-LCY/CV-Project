@@ -1,0 +1,16 @@
+{
+    "enable_vl": true,
+    "client": {
+        "api_base_url": "http://127.0.0.1:28565",
+        "session_id": "local-user",
+        "timeout_seconds": 120
+    },
+    "display": {
+        "preset": "balanced",
+        "custom": {
+            "visible_ratio": 0.4,
+            "text_x_offset": 140,
+            "text_y_offset": 20
+        }
+    }
+}
