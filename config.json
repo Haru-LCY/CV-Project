@@ -12,5 +12,10 @@
             "text_x_offset": 140,
             "text_y_offset": 20
         }
+    },
+    "character": {
+        "character_id": null,
+        "user_name": "用户",
+        "auto_open_creator": true
     }
 }

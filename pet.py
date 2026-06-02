@@ -9,6 +9,7 @@ import textwrap
 import traceback
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import cv2
@@ -17,11 +18,87 @@ import requests
 from PyQt5.QtCore import QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QFontDatabase, QIcon, QImage, QPainter, QPixmap
 from PyQt5.QtMultimedia import QSound
-from PyQt5.QtWidgets import QAction, QApplication, QLabel, QMenu, QSystemTrayIcon
+from PyQt5.QtWidgets import QAction, QApplication, QLabel, QMenu, QMessageBox, QSystemTrayIcon
 
+from character_workbench import CharacterCreatorDialog
 from Murasame import generate, utils
 
 screen_worker = None
+DEFAULT_CHARACTER_NAME = "丛雨"
+DEFAULT_USER_NAME = "用户"
+DEFAULT_FGIMAGE_TARGET = "ムラサメb"
+DEFAULT_EXPRESSION_LAYERS = [1717, 1475, 1261]
+
+DEFAULT_CHARACTER_OPTIONS = {
+    "appearance_traits": [
+        "黑发",
+        "棕发",
+        "金发",
+        "银白发",
+        "粉发",
+        "黑瞳",
+        "棕瞳",
+        "蓝瞳",
+        "绿瞳",
+        "紫瞳",
+        "长直发",
+        "短发",
+        "中长发",
+        "双马尾",
+        "单马尾",
+        "侧马尾",
+        "波浪卷",
+        "校服",
+        "休闲私服",
+        "针织衫",
+        "衬衫短裙",
+        "运动服",
+        "连衣裙",
+        "眼镜",
+        "发带",
+        "缎带",
+        "发卡",
+        "耳机",
+        "清纯",
+        "可爱",
+        "冷淡",
+        "优雅",
+        "活泼",
+    ],
+    "personality_traits": [
+        "傲娇系",
+        "三无冷淡系",
+        "呆萌系",
+        "元气少女系",
+        "温柔治愈系",
+        "毒舌系",
+        "害羞内向系",
+        "天然系",
+        "认真优等生系",
+        "慵懒系",
+    ],
+    "identity_traits": [
+        "同班同学",
+        "学妹",
+        "学姐",
+        "青梅竹马",
+        "大小姐",
+        "学生会成员",
+        "社团同伴",
+        "图书委员",
+        "风纪委员",
+        "偶像练习生",
+        "便利店兼职",
+        "咖啡店店员",
+    ],
+    "styles": ["anime_desktop_pet", "transparent_png", "live2d_like"],
+    "defaults": {
+        "appearance_traits": ["棕发", "蓝瞳", "中长发", "校服", "清纯"],
+        "personality_traits": ["温柔治愈系", "认真优等生系"],
+        "identity_traits": ["同班同学"],
+        "style": "anime_desktop_pet",
+    },
+}
 
 
 def wrap_text(text: str, width: int = 12) -> str:
@@ -31,23 +108,101 @@ def wrap_text(text: str, width: int = 12) -> str:
 @dataclass
 class PetResponse:
     text: str
-    expression_layers: list[int]
+    expression_layers: list[int] | None = None
     audio_url: str | None = None
     audio_base64: str | None = None
     session_id: str | None = None
+    character_name: str | None = None
+    display_image_url: str | None = None
+    display_image_base64: str | None = None
+
+
+@dataclass
+class CharacterProfile:
+    character_id: str | None = None
+    name: str = DEFAULT_CHARACTER_NAME
+    persona: str = ""
+    greeting: str = "主人，你好呀！"
+    display_image_url: str | None = None
+    display_image_base64: str | None = None
+    expression_layers: list[int] | None = None
+    fgimage_target: str = DEFAULT_FGIMAGE_TARGET
 
 
 class PetApiClient:
     def __init__(self) -> None:
         config = utils.get_config()
         client_config = config.get("client", {})
+        character_config = config.get("character", {})
         self.base_url = client_config.get("api_base_url", "http://127.0.0.1:28565").rstrip("/")
         self.session_id = client_config.get("session_id", "local-user")
         self.timeout = float(client_config.get("timeout_seconds", 120))
+        self.character_id = character_config.get("character_id")
+        self.user_name = character_config.get("user_name") or DEFAULT_USER_NAME
+
+    def get_character_options(self) -> dict:
+        response = requests.get(f"{self.base_url}/v1/character/options", timeout=self.timeout)
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "appearance_traits": (
+                data.get("appearance_traits")
+                or data.get("moe_traits")
+                or DEFAULT_CHARACTER_OPTIONS["appearance_traits"]
+            ),
+            "personality_traits": data.get("personality_traits") or DEFAULT_CHARACTER_OPTIONS["personality_traits"],
+            "identity_traits": data.get("identity_traits") or DEFAULT_CHARACTER_OPTIONS["identity_traits"],
+            "styles": data.get("styles") or DEFAULT_CHARACTER_OPTIONS["styles"],
+            "defaults": data.get("defaults") or DEFAULT_CHARACTER_OPTIONS["defaults"],
+        }
+
+    def generate_character(
+        self,
+        user_name: str,
+        appearance_traits: list[str],
+        personality_traits: list[str],
+        identity_traits: list[str],
+        style: str,
+    ) -> CharacterProfile:
+        payload = {
+            "session_id": self.session_id,
+            "user_name": user_name,
+            "appearance_traits": appearance_traits,
+            "personality_traits": personality_traits,
+            "identity_traits": identity_traits,
+            "style": style,
+            "constraints": {
+                "transparent_background": True,
+                "safe_for_work": True,
+            },
+        }
+        response = requests.post(f"{self.base_url}/v1/character/generate", json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        return self._character_from_json(response.json())
+
+    def get_character(self, character_id: str) -> CharacterProfile:
+        response = requests.get(f"{self.base_url}/v1/character/{character_id}", timeout=self.timeout)
+        response.raise_for_status()
+        profile = self._character_from_json(response.json())
+        self.character_id = profile.character_id or character_id
+        return profile
+
+    def regenerate_character_image(self, character_id: str) -> CharacterProfile:
+        response = requests.post(
+            f"{self.base_url}/v1/character/regenerate-image",
+            json={"session_id": self.session_id, "character_id": character_id},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        profile = self._character_from_json(response.json())
+        self.character_id = profile.character_id or character_id
+        return profile
 
     def respond(self, event: str, text: str, screenshot_base64: str | None = None) -> PetResponse:
         payload = {
             "session_id": self.session_id,
+            "character_id": self.character_id,
+            "user_name": self.user_name,
             "event": event,
             "text": text,
         }
@@ -63,10 +218,13 @@ class PetApiClient:
         data = response.json()
         return PetResponse(
             text=data.get("text") or data.get("raw_text") or "",
-            expression_layers=data.get("expression_layers") or [1717, 1475, 1261],
+            expression_layers=data.get("expression_layers"),
             audio_url=data.get("audio_url"),
             audio_base64=data.get("audio_base64"),
             session_id=data.get("session_id") or self.session_id,
+            character_name=data.get("character_name"),
+            display_image_url=data.get("display_image_url"),
+            display_image_base64=data.get("display_image_base64"),
         )
 
     def download_audio(self, result: PetResponse) -> str | None:
@@ -83,6 +241,21 @@ class PetApiClient:
         response.raise_for_status()
         return self._write_audio(response.content, result.audio_url)
 
+    def download_image(self, image_url: str | None, image_base64: str | None, key: str) -> str | None:
+        if image_base64:
+            image_bytes = base64.b64decode(image_base64)
+            return self._write_image(image_bytes, key, ".png")
+        if not image_url:
+            return None
+
+        resolved_url = image_url
+        if not urlparse(resolved_url).scheme:
+            resolved_url = urljoin(f"{self.base_url}/", resolved_url.lstrip("/"))
+        response = requests.get(resolved_url, timeout=self.timeout)
+        response.raise_for_status()
+        suffix = Path(urlparse(resolved_url).path).suffix or ".png"
+        return self._write_image(response.content, image_url, suffix)
+
     def _write_audio(self, audio_bytes: bytes, key: str) -> str:
         voices_dir = os.path.join(tempfile.gettempdir(), "murasame_pet_voices")
         os.makedirs(voices_dir, exist_ok=True)
@@ -92,8 +265,39 @@ class PetApiClient:
             f.write(audio_bytes)
         return path
 
+    def _write_image(self, image_bytes: bytes, key: str, suffix: str) -> str:
+        images_dir = os.path.join(tempfile.gettempdir(), "murasame_pet_images")
+        os.makedirs(images_dir, exist_ok=True)
+        safe_suffix = suffix if suffix.lower() in {".png", ".webp", ".jpg", ".jpeg"} else ".png"
+        filename = hashlib.md5(key.encode("utf-8")).hexdigest() + safe_suffix
+        path = os.path.join(images_dir, filename)
+        with open(path, "wb") as f:
+            f.write(image_bytes)
+        return path
 
-class Murasame(QLabel):
+    def _character_from_json(self, data: dict) -> CharacterProfile:
+        return CharacterProfile(
+            character_id=data.get("character_id") or data.get("id") or self.character_id,
+            name=data.get("name") or data.get("character_name") or DEFAULT_CHARACTER_NAME,
+            persona=data.get("persona") or "",
+            greeting=data.get("greeting") or "主人，你好呀！",
+            display_image_url=data.get("display_image_url"),
+            display_image_base64=data.get("display_image_base64"),
+            expression_layers=data.get("expression_layers"),
+            fgimage_target=data.get("fgimage_target") or DEFAULT_FGIMAGE_TARGET,
+        )
+
+    def remember_character(self, profile: CharacterProfile, user_name: str) -> None:
+        config = utils.get_config()
+        character_config = config.setdefault("character", {})
+        character_config["character_id"] = profile.character_id
+        character_config["user_name"] = user_name or DEFAULT_USER_NAME
+        utils.save_config(config)
+        self.character_id = profile.character_id
+        self.user_name = user_name or DEFAULT_USER_NAME
+
+
+class DesktopPet(QLabel):
     DISPLAY_PRESETS = {
         "compact": {"visible_ratio": 0.35, "text_x_offset": 120, "text_y_offset": 15},
         "balanced": {"visible_ratio": 0.45, "text_x_offset": 140, "text_y_offset": 20},
@@ -101,10 +305,11 @@ class Murasame(QLabel):
         "full": {"visible_ratio": 1.0, "text_x_offset": 160, "text_y_offset": -100},
     }
 
-    def __init__(self, api_client: PetApiClient) -> None:
+    def __init__(self, api_client: PetApiClient, character: CharacterProfile) -> None:
         super().__init__()
         self.api_client = api_client
-        self.latest_response = "主人，你好呀！"
+        self.character = character
+        self.latest_response = character.greeting or "主人，你好呀！"
         self.input_mode = False
         self.input_buffer = ""
         self.preedit_text = ""
@@ -146,7 +351,12 @@ class Murasame(QLabel):
         self.setAttribute(Qt.WA_InputMethodEnabled, True)
         self.mousePressEvent = self.start_move
         self.mouseMoveEvent = self.on_move
-        self._set_expression([1717, 1475, 1261])
+        self._set_avatar(
+            image_url=character.display_image_url,
+            image_base64=character.display_image_base64,
+            layers=character.expression_layers or DEFAULT_EXPRESSION_LAYERS,
+            fgimage_target=character.fgimage_target,
+        )
 
     def _setup_macos_window_level(self) -> None:
         if sys.platform != "darwin":
@@ -198,9 +408,7 @@ class Murasame(QLabel):
         qimg = QImage(cv_img_bgra.data, width, height, 4 * width, QImage.Format_RGBA8888)
         return QPixmap.fromImage(qimg)
 
-    def _set_expression(self, layers: list[int]) -> None:
-        cv_img = generate.generate_fgimage(target="ムラサメb", embeddings_layers=layers)
-        pixmap = self.cvimg_to_qpixmap(cv_img)
+    def _apply_pixmap(self, pixmap: QPixmap) -> None:
         scale = self._scale_factor()
         divisor = int(scale * 2) if scale > 1.0 else 2
         pixmap = pixmap.scaled(
@@ -213,6 +421,46 @@ class Murasame(QLabel):
         self.resize(pixmap.size())
         self.update()
 
+    def _set_avatar(
+        self,
+        image_url: str | None = None,
+        image_base64: str | None = None,
+        layers: list[int] | None = None,
+        fgimage_target: str = DEFAULT_FGIMAGE_TARGET,
+    ) -> None:
+        if image_url or image_base64:
+            try:
+                image_path = self.api_client.download_image(
+                    image_url,
+                    image_base64,
+                    self.character.character_id or self.character.name,
+                )
+                if image_path:
+                    pixmap = QPixmap(image_path)
+                    if not pixmap.isNull():
+                        self._apply_pixmap(pixmap)
+                        return
+            except Exception as exc:
+                print(f"Avatar image loading failed: {exc}")
+
+        fallback_layers = layers or DEFAULT_EXPRESSION_LAYERS
+        try:
+            cv_img = generate.generate_fgimage(target=fgimage_target, embeddings_layers=fallback_layers)
+            self._apply_pixmap(self.cvimg_to_qpixmap(cv_img))
+        except Exception as exc:
+            print(f"Local expression loading failed: {exc}")
+
+    def set_character(self, character: CharacterProfile) -> None:
+        self.character = character
+        self.latest_response = character.greeting or self.latest_response
+        self._set_avatar(
+            image_url=character.display_image_url,
+            image_base64=character.display_image_base64,
+            layers=character.expression_layers or DEFAULT_EXPRESSION_LAYERS,
+            fgimage_target=character.fgimage_target,
+        )
+        self.show_text(self.latest_response, typing=True)
+
     def start_move(self, event) -> None:
         if event.button() == Qt.LeftButton:
             visible_height = int(self.height() * self.visible_ratio)
@@ -223,7 +471,7 @@ class Murasame(QLabel):
             elif event.y() > int(visible_height * 0.7) or self._text_clicked(event.pos()):
                 self.input_mode = True
                 self.input_buffer = ""
-                self.display_text = "【 LemonQu 】\n  ..."
+                self.display_text = f"【 {self.api_client.user_name} 】\n  ..."
                 self.update()
         if event.button() == Qt.MiddleButton:
             self.offset = event.pos()
@@ -243,7 +491,7 @@ class Murasame(QLabel):
     def on_move(self, event) -> None:
         if self.touch_head and self.head_press_x is not None and event.buttons() & Qt.LeftButton:
             if abs(event.x() - self.head_press_x) > 50:
-                self.start_api_worker("head_touch", "主人摸了摸你的头")
+                self.start_api_worker("head_touch", f"{self.api_client.user_name}摸了摸你的头")
                 self.touch_head = False
                 self.head_press_x = None
         if self.offset is not None and event.buttons() == Qt.MiddleButton:
@@ -260,7 +508,7 @@ class Murasame(QLabel):
     def show_text(self, text: str, x_offset: int | None = None, y_offset: int | None = None, typing: bool = True) -> None:
         self.text_x_offset = self._scaled_value(x_offset if x_offset is not None else self.text_x_offset_default)
         self.text_y_offset = self._scaled_value(y_offset if y_offset is not None else self.text_y_offset_default)
-        self.typing_prefix = "【 丛雨 】\n  "
+        self.typing_prefix = f"【 {self.character.name} 】\n  "
         if typing:
             self.full_text = text
             self.display_text = self.typing_prefix
@@ -329,7 +577,7 @@ class Murasame(QLabel):
         if event.commitString():
             self.input_buffer += event.commitString()
         self.preedit_text = event.preeditString()
-        self.display_text = f"【 LemonQu 】\n  「{wrap_text(self.input_buffer + self.preedit_text)}」"
+        self.display_text = f"【 {self.api_client.user_name} 】\n  「{wrap_text(self.input_buffer + self.preedit_text)}」"
         self.update()
 
     def keyPressEvent(self, event) -> None:
@@ -347,7 +595,10 @@ class Murasame(QLabel):
         elif event.text() and not self.preedit_text:
             self.input_buffer += event.text()
         wrapped = wrap_text(self.input_buffer)
-        self.display_text = "【 LemonQu 】\n  ..." if not wrapped.strip() else f"【 LemonQu 】\n  「{wrapped}」"
+        if not wrapped.strip():
+            self.display_text = f"【 {self.api_client.user_name} 】\n  ..."
+        else:
+            self.display_text = f"【 {self.api_client.user_name} 】\n  「{wrapped}」"
         self.update()
 
     def start_api_worker(self, event: str, text: str, screenshot_base64: str | None = None) -> None:
@@ -361,6 +612,8 @@ class Murasame(QLabel):
             return
         if result.session_id:
             self.api_client.session_id = result.session_id
+        if result.character_name:
+            self.character.name = result.character_name
         if result.audio_url or result.audio_base64:
             try:
                 audio_path = self.api_client.download_audio(result)
@@ -372,7 +625,13 @@ class Murasame(QLabel):
         self.show_text(self.latest_response, typing=True)
         self.input_buffer = ""
         self.preedit_text = ""
-        self._set_expression(result.expression_layers)
+        if result.display_image_url or result.display_image_base64 or result.expression_layers:
+            self._set_avatar(
+                image_url=result.display_image_url,
+                image_base64=result.display_image_base64,
+                layers=result.expression_layers,
+                fgimage_target=self.character.fgimage_target,
+            )
 
 
 class ScreenWorker(QThread):
@@ -426,35 +685,89 @@ def clear_history(parent, api_client: PetApiClient) -> None:
     parent.show_text(parent.latest_response, typing=True)
 
 
+def load_initial_character(api_client: PetApiClient) -> CharacterProfile:
+    if api_client.character_id:
+        try:
+            return api_client.get_character(api_client.character_id)
+        except Exception as exc:
+            print(f"Failed to load configured character: {exc}")
+    return CharacterProfile(expression_layers=DEFAULT_EXPRESSION_LAYERS)
+
+
+def get_character_options(api_client: PetApiClient) -> dict:
+    try:
+        return api_client.get_character_options()
+    except Exception as exc:
+        print(f"Failed to load character options: {exc}")
+        return DEFAULT_CHARACTER_OPTIONS
+
+
+def open_character_settings(parent: DesktopPet, api_client: PetApiClient) -> None:
+    dialog = CharacterCreatorDialog(
+        get_character_options(api_client),
+        api_client,
+        DEFAULT_CHARACTER_OPTIONS,
+        DEFAULT_USER_NAME,
+        parent,
+    )
+    if dialog.exec_() != QDialog.Accepted:
+        return
+    if dialog.preview_profile is None:
+        return
+    api_client.remember_character(dialog.preview_profile, dialog.preview_user_name)
+    parent.set_character(dialog.preview_profile)
+
+
+def regenerate_character_image(parent: DesktopPet, api_client: PetApiClient) -> None:
+    if not api_client.character_id:
+        QMessageBox.information(parent, "缺少角色", "请先创建角色。")
+        return
+    try:
+        character = api_client.regenerate_character_image(api_client.character_id)
+        parent.set_character(character)
+    except Exception as exc:
+        traceback.print_exc()
+        QMessageBox.warning(parent, "重新生成人设图失败", f"{type(exc).__name__}: {exc}")
+
+
 if __name__ == "__main__":
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
     app = QApplication(sys.argv)
     api_client = PetApiClient()
-    murasame = Murasame(api_client)
+    desktop_pet = DesktopPet(api_client, load_initial_character(api_client))
 
     screen = app.primaryScreen()
     screen_geometry = screen.availableGeometry()
-    x = screen_geometry.width() - murasame.width() - 20
-    y = screen_geometry.height() - int(murasame.height() * murasame.visible_ratio)
-    murasame.move(x, y)
-    murasame.show()
+    x = screen_geometry.width() - desktop_pet.width() - 20
+    y = screen_geometry.height() - int(desktop_pet.height() * desktop_pet.visible_ratio)
+    desktop_pet.move(x, y)
+    desktop_pet.show()
 
     tray_icon = QSystemTrayIcon(QIcon("icon.png"), parent=app)
     tray_menu = QMenu()
-    clear_action = QAction("Clear History")
-    clear_action.triggered.connect(lambda: clear_history(murasame, api_client))
-    exit_action = QAction("Exit")
+    character_action = QAction("角色设置")
+    character_action.triggered.connect(lambda: open_character_settings(desktop_pet, api_client))
+    regenerate_image_action = QAction("重新生成人设图")
+    regenerate_image_action.triggered.connect(lambda: regenerate_character_image(desktop_pet, api_client))
+    clear_action = QAction("清空记忆")
+    clear_action.triggered.connect(lambda: clear_history(desktop_pet, api_client))
+    exit_action = QAction("退出")
     exit_action.triggered.connect(app.quit)
+    tray_menu.addAction(character_action)
+    tray_menu.addAction(regenerate_image_action)
     tray_menu.addAction(clear_action)
     tray_menu.addAction(exit_action)
     tray_icon.setContextMenu(tray_menu)
     tray_icon.show()
 
-    murasame.show_text(murasame.latest_response, typing=True)
+    desktop_pet.show_text(desktop_pet.latest_response, typing=True)
+    if not api_client.character_id and utils.get_config().get("character", {}).get("auto_open_creator", True):
+        QTimer.singleShot(500, lambda: open_character_settings(desktop_pet, api_client))
 
     screen_worker = ScreenWorker(api_client)
     if utils.get_config().get("enable_vl", True):
         screen_worker.screen_result.connect(
-            lambda screenshot: murasame.start_api_worker("screen_context", "", screenshot)
+            lambda screenshot: desktop_pet.start_api_worker("screen_context", "", screenshot)
         )
         screen_worker.start()
 
