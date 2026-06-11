@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import base64
 import json
 import sys
 import textwrap
 import traceback
 from dataclasses import dataclass
+from io import BytesIO
 
-import cv2
 import requests
+from PIL import Image
 from PyQt5.QtCore import QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QFontDatabase, QIcon, QImage, QPainter, QPixmap
-from PyQt5.QtWidgets import QAction, QApplication, QDialog, QLabel, QMenu, QMessageBox, QSystemTrayIcon
+from PyQt5.QtWidgets import QAction, QApplication, QDialog, QLabel, QMenu, QMessageBox, QSystemTrayIcon, QToolButton
 
 from character_runtime import (
     avatar_values_for_emotion,
@@ -20,9 +22,10 @@ from character_runtime import (
     write_image_to_cache,
 )
 from character_workbench import API_BASE_URL, DESCRIPTION_MODEL, CharacterCreatorDialog, LocalCharacterGenerator
-from Murasame import generate, utils
+from Murasame import utils
 
 screen_worker = None
+DEFAULT_VL_MODEL = "qwen3-vl-flash"
 DEFAULT_CHARACTER_NAME = "丛雨"
 DEFAULT_USER_NAME = "用户"
 DEFAULT_FGIMAGE_TARGET = "ムラサメb"
@@ -112,9 +115,11 @@ class PetApiClient:
     def __init__(self) -> None:
         config = utils.get_config()
         client_config = config.get("client", {})
+        vl_config = config.get("vl", {})
         character_config = config.get("character", {})
         self.session_id = client_config.get("session_id", "local-user")
         self.timeout = float(client_config.get("timeout_seconds", 120))
+        self.vl_model = vl_config.get("model") or DEFAULT_VL_MODEL
         self.character_id = character_config.get("character_id")
         self.user_name = character_config.get("user_name") or DEFAULT_USER_NAME
         self.character_profile = self._character_from_config(character_config)
@@ -125,6 +130,26 @@ class PetApiClient:
         return DEFAULT_CHARACTER_OPTIONS
 
     def respond(self, event: str, text: str, screenshot_base64: str | None = None) -> PetResponse:
+        messages = build_reply_messages(
+            self.character_profile,
+            self.user_name,
+            self.history,
+            event,
+            text,
+            bool(screenshot_base64),
+        )
+        model = DESCRIPTION_MODEL
+        if event == "screen_context" and screenshot_base64:
+            model = self.vl_model
+            user_text = messages[-1]["content"]
+            messages[-1] = {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": screenshot_base64}},
+                    {"type": "text", "text": user_text},
+                ],
+            }
+
         response = requests.post(
             f"{API_BASE_URL}/api/v1/chat/completions",
             headers={
@@ -132,15 +157,8 @@ class PetApiClient:
                 "Content-Type": "application/json",
             },
             json={
-                "model": DESCRIPTION_MODEL,
-                "messages": build_reply_messages(
-                    self.character_profile,
-                    self.user_name,
-                    self.history,
-                    event,
-                    text,
-                    bool(screenshot_base64),
-                ),
+                "model": model,
+                "messages": messages,
                 "stream": False,
                 "temperature": 0.85,
                 "top_p": 1,
@@ -220,6 +238,8 @@ class PetApiClient:
 
 
 class DesktopPet(QLabel):
+    settings_requested = pyqtSignal()
+
     DISPLAY_PRESETS = {
         "compact": {"visible_ratio": 0.35, "text_x_offset": 120, "text_y_offset": 15},
         "balanced": {"visible_ratio": 0.45, "text_x_offset": 140, "text_y_offset": 20},
@@ -243,6 +263,7 @@ class DesktopPet(QLabel):
         self.touch_head = False
         self.head_press_x: int | None = None
         self.llm_worker: ApiWorker | None = None
+        self.settings_button_size = self._scaled_value(34)
 
         config = utils.get_config()
         display_config = config.get("display", {})
@@ -255,9 +276,8 @@ class DesktopPet(QLabel):
         self.text_x_offset_default = int(preset.get("text_x_offset", 140))
         self.text_y_offset_default = int(preset.get("text_y_offset", 20))
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self._setup_macos_window_level()
 
         self.text_font = QFont()
         self.text_font.setFamily("思源黑体 CN Bold")
@@ -265,11 +285,31 @@ class DesktopPet(QLabel):
         self.text_font.setPointSize(self._scaled_value(24))
         self.text_x_offset = 0
         self.text_y_offset = 0
+        self.settings_button = QToolButton(self)
+        self.settings_button.setIcon(QIcon("icon.png"))
+        self.settings_button.setIconSize(QSize(self._scaled_value(20), self._scaled_value(20)))
+        self.settings_button.setFixedSize(self.settings_button_size, self.settings_button_size)
+        self.settings_button.setToolTip("角色设置")
+        self.settings_button.setCursor(Qt.PointingHandCursor)
+        self.settings_button.clicked.connect(self.settings_requested.emit)
+        self.settings_button.setStyleSheet(
+            """
+            QToolButton {
+                background: rgba(255, 255, 255, 210);
+                border: 1px solid rgba(80, 48, 60, 120);
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QToolButton:hover {
+                background: rgba(255, 246, 250, 240);
+                border-color: rgba(80, 48, 60, 190);
+            }
+            """
+        )
 
         self.typing_timer = QTimer()
         self.typing_timer.timeout.connect(self._typing_step)
         self.typing_interval = 40
-
         self.setAttribute(Qt.WA_InputMethodEnabled, True)
         self.mousePressEvent = self.start_move
         self.mouseMoveEvent = self.on_move
@@ -280,27 +320,6 @@ class DesktopPet(QLabel):
             layers=character.expression_layers or DEFAULT_EXPRESSION_LAYERS,
             fgimage_target=character.fgimage_target,
         )
-
-    def _setup_macos_window_level(self) -> None:
-        if sys.platform != "darwin":
-            return
-        try:
-            from AppKit import NSFloatingWindowLevel
-            from objc import objc_object
-            from ctypes import c_void_p
-
-            def set_level() -> None:
-                try:
-                    view = objc_object(c_void_p=c_void_p(int(self.winId())))
-                    window = view.window()
-                    if window:
-                        window.setLevel_(NSFloatingWindowLevel)
-                except Exception as exc:
-                    print(f"Failed to set macOS window level: {exc}")
-
-            QTimer.singleShot(100, set_level)
-        except Exception:
-            pass
 
     def _scale_factor(self) -> float:
         app = QApplication.instance()
@@ -326,6 +345,8 @@ class DesktopPet(QLabel):
         return super().event(event)
 
     def cvimg_to_qpixmap(self, cv_img) -> QPixmap:
+        import cv2
+
         cv_img_bgra = cv2.cvtColor(cv_img, cv2.COLOR_RGBA2BGRA)
         height, width, _ = cv_img_bgra.shape
         qimg = QImage(cv_img_bgra.data, width, height, 4 * width, QImage.Format_RGBA8888)
@@ -344,7 +365,18 @@ class DesktopPet(QLabel):
         )
         self.setPixmap(pixmap)
         self.resize(pixmap.size())
+        self._position_settings_button()
         self.update()
+
+    def _position_settings_button(self) -> None:
+        if not hasattr(self, "settings_button"):
+            return
+        margin = self._scaled_value(8)
+        visible_height = max(self.settings_button_size + margin * 2, int(self.height() * self.visible_ratio))
+        x = max(margin, self.width() - self.settings_button_size - margin)
+        y = max(margin, min(visible_height - self.settings_button_size - margin, visible_height // 2))
+        self.settings_button.move(x, y)
+        self.settings_button.raise_()
 
     def _set_avatar(
         self,
@@ -370,6 +402,8 @@ class DesktopPet(QLabel):
 
         fallback_layers = layers or DEFAULT_EXPRESSION_LAYERS
         try:
+            from Murasame import generate
+
             cv_img = generate.generate_fgimage(target=fgimage_target, embeddings_layers=fallback_layers)
             self._apply_pixmap(self.cvimg_to_qpixmap(cv_img))
         except Exception as exc:
@@ -528,6 +562,9 @@ class DesktopPet(QLabel):
         self.update()
 
     def start_api_worker(self, event: str, text: str, screenshot_base64: str | None = None) -> None:
+        if self.llm_worker and self.llm_worker.isRunning():
+            if event == "screen_context":
+                return
         self.llm_worker = ApiWorker(self.api_client, event, text, screenshot_base64)
         self.llm_worker.finished.connect(self.on_api_result)
         self.llm_worker.start()
@@ -558,17 +595,40 @@ class ScreenWorker(QThread):
     def __init__(self, api_client: PetApiClient, parent=None) -> None:
         super().__init__(parent)
         self.api_client = api_client
+        config = utils.get_config().get("vl", {})
+        self.interval_seconds = max(5, int(config.get("interval_seconds", 30)))
+        self.max_width = max(320, int(config.get("max_width", 1280)))
+        self.jpeg_quality = max(35, min(95, int(config.get("jpeg_quality", 75))))
         self.running = True
         self.should_capture = False
 
     def run(self) -> None:
         while self.running:
             if self.should_capture:
-                self.screen_result.emit("")
-            self.sleep(30)
+                self.screen_result.emit(self._capture_desktop_data_uri())
+            self.sleep(self.interval_seconds)
 
     def stop(self) -> None:
         self.running = False
+
+    def _capture_desktop_data_uri(self) -> str:
+        try:
+            from PIL import ImageGrab
+
+            screenshot = ImageGrab.grab()
+            if not isinstance(screenshot, Image.Image):
+                return ""
+            image = screenshot.convert("RGB")
+            if image.width > self.max_width:
+                target_height = max(1, int(image.height * self.max_width / image.width))
+                image = image.resize((self.max_width, target_height), Image.Resampling.LANCZOS)
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=self.jpeg_quality, optimize=True)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            return f"data:image/jpeg;base64,{encoded}"
+        except Exception as exc:
+            print(f"Desktop screenshot capture failed: {type(exc).__name__}: {exc}")
+            return ""
 
 
 class ApiWorker(QThread):
@@ -652,18 +712,19 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     api_client = PetApiClient()
     desktop_pet = DesktopPet(api_client, load_initial_character(api_client))
+    desktop_pet.settings_requested.connect(lambda: open_character_settings(desktop_pet, api_client))
 
     screen = app.primaryScreen()
     screen_geometry = screen.availableGeometry()
     x = screen_geometry.width() - desktop_pet.width() - 20
-    y = screen_geometry.height() - int(desktop_pet.height() * desktop_pet.visible_ratio)
+    y = max(0, screen_geometry.height() - int(desktop_pet.height() * desktop_pet.visible_ratio) - 80)
     desktop_pet.move(x, y)
     desktop_pet.show()
 
     tray_icon = QSystemTrayIcon(QIcon("icon.png"), parent=app)
     tray_menu = QMenu()
     character_action = QAction("角色设置")
-    character_action.triggered.connect(lambda: open_character_settings(desktop_pet, api_client))
+    character_action.triggered.connect(desktop_pet.settings_requested.emit)
     regenerate_image_action = QAction("重新生成人设图")
     regenerate_image_action.triggered.connect(lambda: regenerate_character_image(desktop_pet, api_client))
     clear_action = QAction("清空记忆")
@@ -684,8 +745,9 @@ if __name__ == "__main__":
     screen_worker = ScreenWorker(api_client)
     if utils.get_config().get("enable_vl", True):
         screen_worker.screen_result.connect(
-            lambda screenshot: desktop_pet.start_api_worker("screen_context", "", screenshot)
+            lambda screenshot: desktop_pet.start_api_worker("screen_context", "", screenshot) if screenshot else None
         )
         screen_worker.start()
+        app.aboutToQuit.connect(screen_worker.stop)
 
     sys.exit(app.exec_())

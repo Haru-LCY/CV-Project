@@ -8,6 +8,12 @@ DEFAULT_CONFIG = {
         "session_id": "local-user",
         "timeout_seconds": 120,
     },
+    "vl": {
+        "model": "qwen3-vl-flash",
+        "interval_seconds": 30,
+        "max_width": 1280,
+        "jpeg_quality": 75,
+    },
     "display": {
         "preset": "balanced",
         "custom": {

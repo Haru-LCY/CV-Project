@@ -52,11 +52,16 @@ def build_reply_messages(
     elif event == "head_touch":
         user_prompt = f"事件：{text or f'{user_name}摸了摸你的头'}"
     elif event == "screen_context":
-        user_prompt = "事件：桌面状态可能发生了变化。没有可用截图内容，请不要编造看见的具体画面。"
+        if has_screenshot:
+            user_prompt = f"""
+事件：你刚刚看了一眼{user_name}的桌面截图。
+请基于截图中明确可见的内容，用角色口吻做一句简短自然的回应。
+不要复述长段文字、不要泄露敏感信息、不要假装能看到截图外的内容。
+""".strip()
+        else:
+            user_prompt = "事件：桌面状态可能发生了变化。没有可用截图内容，请不要编造看见的具体画面。"
     else:
         user_prompt = f"事件：{event}\n内容：{text}"
-    if has_screenshot:
-        user_prompt += "\n注意：本客户端不再发送截图内容，只把该事件作为普通上下文提醒。"
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history[-12:])

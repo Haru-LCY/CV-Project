@@ -245,7 +245,11 @@ class LocalCharacterGenerator:
             }
             for future in as_completed(futures):
                 emotion = futures[future]
-                result[emotion] = {"display_image_base64": future.result()}
+                try:
+                    result[emotion] = {"display_image_base64": future.result()}
+                except Exception as exc:
+                    print(f"Emotion image generation failed for {emotion}; using happy image fallback: {exc}")
+                    result[emotion] = {"display_image_base64": happy_image}
         return result
 
     def _generate_image(self, image_prompt: str, reference_image_base64: str | None = None) -> str:
@@ -283,8 +287,43 @@ class LocalCharacterGenerator:
         response.raise_for_status()
         image_base64 = self._extract_image_base64_from_generate_content(response.text)
         if not image_base64:
-            raise RuntimeError("图片接口没有返回 inline image data")
+            raise RuntimeError(f"图片接口没有返回 inline image data: {self._summarize_image_response(response.text)}")
         return image_base64
+
+    def _summarize_image_response(self, text: str) -> str:
+        snippets = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line == "[DONE]":
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                snippets.append(line[:300])
+                continue
+            summary = self._find_response_summary(obj)
+            if summary:
+                snippets.append(summary)
+        return " | ".join(snippets[:3]) or text[:500] or "empty response"
+
+    def _find_response_summary(self, value: Any) -> str | None:
+        if isinstance(value, dict):
+            for key in ("finishReason", "finish_reason", "blockReason", "block_reason", "message", "text"):
+                item = value.get(key)
+                if isinstance(item, str) and item.strip():
+                    return f"{key}={item.strip()[:240]}"
+            for child in value.values():
+                found = self._find_response_summary(child)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for item in value:
+                found = self._find_response_summary(item)
+                if found:
+                    return found
+        return None
 
     def _guess_image_mime_type(self, image_base64: str) -> str:
         if image_base64.startswith("/9j/"):
