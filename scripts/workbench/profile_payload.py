@@ -14,6 +14,8 @@ def profile_payload(profile: Any) -> dict:
         "emotion_images": emotion_images_payload(profile),
         "personality_dimensions": getattr(profile, "personality_dimensions", None) or {},
         "appearance_style_dimensions": getattr(profile, "appearance_style_dimensions", None) or {},
+        "advanced_settings": getattr(profile, "advanced_settings", None) or {},
+        "custom_attributes": getattr(profile, "custom_attributes", None) or [],
     }
 
 

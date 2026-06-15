@@ -77,6 +77,10 @@ class CharacterWorkbenchBridge(QObject):
         if not personality_dimensions:
             personality_dimensions = dimensions_from_legacy_traits(raw_personality_traits)
         appearance_style_dimensions = normalize_dimensions(payload.get("appearance_style_dimensions"))
+        advanced_settings = payload.get("advanced_settings") if isinstance(payload.get("advanced_settings"), dict) else {}
+        custom_attributes = payload.get("custom_attributes") or payload.get("customAttributes") or []
+        if not isinstance(custom_attributes, list):
+            custom_attributes = []
 
         self.generation_worker = CharacterGenerationWorker(
             api_client=self.api_client,
@@ -87,6 +91,8 @@ class CharacterWorkbenchBridge(QObject):
             style=payload.get("style") or self.default_options["defaults"]["style"],
             personality_dimensions=personality_dimensions,
             appearance_style_dimensions=appearance_style_dimensions,
+            advanced_settings=advanced_settings,
+            custom_attributes=custom_attributes,
             parent=self,
         )
         self.generation_worker.finished.connect(self.on_generation_finished)

@@ -64,6 +64,10 @@ class PetApiClient:
             defaults["personality_dimensions"] = profile.personality_dimensions
         if profile.appearance_style_dimensions:
             defaults["appearance_style_dimensions"] = profile.appearance_style_dimensions
+        if profile.advanced_settings:
+            defaults["advanced_settings"] = profile.advanced_settings
+        if profile.custom_attributes:
+            defaults["custom_attributes"] = profile.custom_attributes
         if profile.style:
             defaults["style"] = profile.style
         return options
@@ -571,6 +575,8 @@ class PetApiClient:
             or dimensions_from_legacy_traits(data.get("personality_traits")),
             appearance_style_dimensions=data.get("appearance_style_dimensions")
             or (data.get("trait_dimensions") or {}).get("appearance_style"),
+            advanced_settings=data.get("advanced_settings") or {},
+            custom_attributes=data.get("custom_attributes") or data.get("customAttributes") or [],
             style=data.get("style"),
         )
 
@@ -591,6 +597,8 @@ class PetApiClient:
         character_config["identity_traits"] = profile.identity_traits
         character_config["personality_dimensions"] = profile.personality_dimensions
         character_config["appearance_style_dimensions"] = profile.appearance_style_dimensions
+        character_config["advanced_settings"] = profile.advanced_settings
+        character_config["custom_attributes"] = profile.custom_attributes
         character_config["trait_dimensions"] = {
             "personality": profile.personality_dimensions or {},
             "appearance_style": profile.appearance_style_dimensions or {},

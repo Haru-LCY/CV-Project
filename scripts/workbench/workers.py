@@ -21,6 +21,8 @@ class CharacterGenerationWorker(QThread):
         style: str,
         personality_dimensions: dict[str, int] | None = None,
         appearance_style_dimensions: dict[str, int] | None = None,
+        advanced_settings: dict | None = None,
+        custom_attributes: list[dict] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -32,6 +34,8 @@ class CharacterGenerationWorker(QThread):
         self.style = style
         self.personality_dimensions = personality_dimensions or {}
         self.appearance_style_dimensions = appearance_style_dimensions or {}
+        self.advanced_settings = advanced_settings or {}
+        self.custom_attributes = custom_attributes or []
 
     def run(self) -> None:
         try:
@@ -43,6 +47,8 @@ class CharacterGenerationWorker(QThread):
                 style=self.style,
                 personality_dimensions=self.personality_dimensions,
                 appearance_style_dimensions=self.appearance_style_dimensions,
+                advanced_settings=self.advanced_settings,
+                custom_attributes=self.custom_attributes,
             )
             self.finished.emit(profile, None)
         except Exception as exc:

@@ -36,9 +36,13 @@ class LocalCharacterGenerator:
         style: str,
         personality_dimensions: dict[str, int] | None = None,
         appearance_style_dimensions: dict[str, int] | None = None,
+        advanced_settings: dict | None = None,
+        custom_attributes: list[dict] | None = None,
     ) -> GeneratedCharacterProfile:
         personality_dimensions = normalize_dimensions(personality_dimensions)
         appearance_style_dimensions = normalize_dimensions(appearance_style_dimensions)
+        advanced_settings = advanced_settings if isinstance(advanced_settings, dict) else {}
+        custom_attributes = custom_attributes if isinstance(custom_attributes, list) else []
         profile_json = self._generate_description(
             user_name=user_name,
             appearance_traits=appearance_traits,
@@ -46,6 +50,8 @@ class LocalCharacterGenerator:
             identity_traits=identity_traits,
             personality_dimensions=personality_dimensions,
             appearance_style_dimensions=appearance_style_dimensions,
+            advanced_settings=advanced_settings,
+            custom_attributes=custom_attributes,
         )
         emotion_images = self._generate_emotion_images(
             profile_json,
@@ -55,6 +61,8 @@ class LocalCharacterGenerator:
             style,
             personality_dimensions,
             appearance_style_dimensions,
+            advanced_settings,
+            custom_attributes,
         )
         display_image_base64 = emotion_images["happy"]["display_image_base64"]
         return GeneratedCharacterProfile(
@@ -69,6 +77,8 @@ class LocalCharacterGenerator:
             identity_traits=identity_traits,
             personality_dimensions=personality_dimensions,
             appearance_style_dimensions=appearance_style_dimensions,
+            advanced_settings=advanced_settings,
+            custom_attributes=custom_attributes,
             style=style,
         )
 
@@ -102,10 +112,14 @@ class LocalCharacterGenerator:
         identity_traits: list[str],
         personality_dimensions: dict[str, int] | None = None,
         appearance_style_dimensions: dict[str, int] | None = None,
+        advanced_settings: dict | None = None,
+        custom_attributes: list[dict] | None = None,
     ) -> dict:
         personality_guidance = format_dimension_guidance(personality_dimensions, "性格")
         appearance_style_guidance = format_dimension_guidance(appearance_style_dimensions, "外貌风格")
         identity_line = f"身份设定：{'、'.join(identity_traits)}" if identity_traits else ""
+        advanced_guidance = self._format_advanced_guidance(advanced_settings)
+        custom_attribute_guidance = self._format_custom_attributes(custom_attributes)
         prompt = f"""
 请根据下面选项生成一个日常系二次元桌宠角色设定。不要使用奇幻、战斗、恐怖、病娇或成人向设定。
 
@@ -115,6 +129,8 @@ class LocalCharacterGenerator:
 {identity_line}
 {appearance_style_guidance}
 {personality_guidance}
+{advanced_guidance}
+{custom_attribute_guidance}
 
 上面的创作取向只用于决定哪些特质更突出。生成的 name、persona、greeting 中禁止提到任何控制信息，不要出现“权重、强度、等级、维度、数值、分数、几分、五分”等表述，也不要写“带着几分某性格”。
 
@@ -170,10 +186,13 @@ class LocalCharacterGenerator:
         emotion_prompt: str,
         personality_dimensions: dict[str, int] | None = None,
         appearance_style_dimensions: dict[str, int] | None = None,
+        advanced_settings: dict | None = None,
+        custom_attributes: list[dict] | None = None,
     ) -> str:
         personality_guidance = format_dimension_guidance(personality_dimensions, "性格")
         appearance_style_guidance = format_dimension_guidance(appearance_style_dimensions, "外貌风格")
         identity_line = f"身份：{'、'.join(identity_traits)}" if identity_traits else ""
+        custom_attribute_guidance = self._format_custom_attributes(custom_attributes)
         return f"""
 生成一张日常系二次元桌宠角色立绘，纯白色背景，单人，全身或膝上构图，干净线稿，柔和上色，适合桌面宠物窗口展示。
 
@@ -185,10 +204,67 @@ class LocalCharacterGenerator:
 画风：{style}
 {appearance_style_guidance}
 {personality_guidance}
+{custom_attribute_guidance}
 当前情感：{emotion_label}。表情要求：{emotion_prompt}。
 
 要求：可爱、清爽、日常服装。创作取向只用于画面取舍，不要在画面中加入文字、数字、标签或维度图。背景必须是干净纯白色，不要透明背景、不要棋盘格、不要渐变背景、不要场景背景、不要阴影底板、不要文字、水印、边框，不要暴露或成人向内容。
 """.strip()
+
+    def _format_advanced_guidance(self, advanced_settings: dict | None) -> str:
+        if not isinstance(advanced_settings, dict) or not advanced_settings:
+            return ""
+        behavior = advanced_settings.get("behavior") if isinstance(advanced_settings.get("behavior"), dict) else {}
+        language = advanced_settings.get("language") if isinstance(advanced_settings.get("language"), dict) else {}
+        lines = []
+        if behavior:
+            labels = {
+                "greetingFrequency": "主动打招呼频率",
+                "studyReminder": "学习提醒强度",
+                "emotionalFeedback": "情绪反馈风格",
+                "presenceLevel": "桌宠存在感",
+            }
+            text = "；".join(f"{labels.get(key, key)}：{value}" for key, value in behavior.items() if value)
+            if text:
+                lines.append(f"互动行为设定：{text}")
+        if language:
+            labels = {
+                "catchphrase": "口癖",
+                "userNickname": "称呼用户",
+                "sentenceEnding": "句尾风格",
+                "allowRoast": "允许毒舌吐槽",
+                "allowAffection": "允许撒娇",
+            }
+            text = "；".join(f"{labels.get(key, key)}：{value}" for key, value in language.items() if value not in ("", None))
+            if text:
+                lines.append(f"语言风格设定：{text}")
+        return "\n".join(lines)
+
+    def _format_custom_attributes(self, custom_attributes: list[dict] | None) -> str:
+        if not isinstance(custom_attributes, list):
+            return ""
+        enabled_attributes = [
+            item
+            for item in custom_attributes
+            if isinstance(item, dict) and item.get("enabled", True) and str(item.get("name") or "").strip()
+        ]
+        if not enabled_attributes:
+            return ""
+        category_labels = {
+            "personality": "性格",
+            "behavior": "行为",
+            "language": "语言",
+            "boundary": "边界",
+            "worldview": "世界观",
+            "other": "其他",
+        }
+        lines = []
+        for item in enabled_attributes:
+            category = category_labels.get(item.get("category"), "其他")
+            intensity = item.get("intensity") or 3
+            description = str(item.get("description") or "").strip()
+            suffix = f"，说明：{description}" if description else ""
+            lines.append(f"- {item.get('name')}（{category}，强度 {intensity}/5{suffix}）")
+        return "自定义属性：\n" + "\n".join(lines)
 
     def _build_reference_emotion_prompt(self, emotion_label: str, emotion_prompt: str) -> str:
         return f"""
@@ -211,6 +287,8 @@ class LocalCharacterGenerator:
         style: str,
         personality_dimensions: dict[str, int] | None = None,
         appearance_style_dimensions: dict[str, int] | None = None,
+        advanced_settings: dict | None = None,
+        custom_attributes: list[dict] | None = None,
     ) -> dict:
         happy_prompt = self._build_image_prompt(
             profile_json,
@@ -222,6 +300,8 @@ class LocalCharacterGenerator:
             EMOTION_SPECS["happy"],
             personality_dimensions,
             appearance_style_dimensions,
+            advanced_settings,
+            custom_attributes,
         )
         happy_source_image = self._generate_source_image(happy_prompt)
         happy_image = make_desktop_pet_standee(happy_source_image)

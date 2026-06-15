@@ -50,6 +50,8 @@ class CharacterCardRepository:
             "identity_traits": getattr(profile, "identity_traits", None) or [],
             "personality_dimensions": getattr(profile, "personality_dimensions", None) or {},
             "appearance_style_dimensions": getattr(profile, "appearance_style_dimensions", None) or {},
+            "advanced_settings": getattr(profile, "advanced_settings", None) or {},
+            "custom_attributes": getattr(profile, "custom_attributes", None) or [],
             "trait_dimensions": {
                 "personality": getattr(profile, "personality_dimensions", None) or {},
                 "appearance_style": getattr(profile, "appearance_style_dimensions", None) or {},
@@ -122,5 +124,7 @@ class CharacterCardRepository:
             appearance_style_dimensions=normalize_dimensions(
                 data.get("appearance_style_dimensions") or trait_dimensions.get("appearance_style")
             ),
+            advanced_settings=data.get("advanced_settings") or {},
+            custom_attributes=data.get("custom_attributes") or data.get("customAttributes") or [],
             style=data.get("style"),
         )
