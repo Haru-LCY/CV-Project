@@ -768,12 +768,23 @@ def get_character_options(api_client: PetApiClient) -> dict:
 
 
 def open_character_settings(parent: DesktopPet, api_client: PetApiClient) -> None:
+    print("Character settings requested")
+
+    def show_character_dialog(dialog: CharacterCreatorDialog) -> None:
+        dialog.showNormal()
+        dialog.raise_()
+        dialog.activateWindow()
+        top_layer_applied = apply_top_layer(dialog, level="screensaver")
+        print(
+            "Character settings dialog shown: "
+            f"visible={dialog.isVisible()}, top_layer={top_layer_applied}"
+        )
+
     existing_dialog = getattr(parent, "character_dialog", None)
     if existing_dialog is not None and existing_dialog.isVisible():
         parent.hide()
-        existing_dialog.showNormal()
-        existing_dialog.raise_()
-        existing_dialog.activateWindow()
+        show_character_dialog(existing_dialog)
+        QTimer.singleShot(250, lambda: show_character_dialog(existing_dialog))
         return
 
     dialog = CharacterCreatorDialog(
@@ -781,8 +792,8 @@ def open_character_settings(parent: DesktopPet, api_client: PetApiClient) -> Non
         api_client,
         DEFAULT_CHARACTER_OPTIONS,
         DEFAULT_USER_NAME,
-        parent,
     )
+    print("Character settings dialog created")
     parent.character_dialog = dialog
 
     def apply_preview_profile() -> None:
@@ -800,9 +811,9 @@ def open_character_settings(parent: DesktopPet, api_client: PetApiClient) -> Non
     dialog.accepted.connect(apply_preview_profile)
     dialog.finished.connect(lambda _result: clear_dialog_reference())
     parent.hide()
-    dialog.show()
-    dialog.raise_()
-    dialog.activateWindow()
+    show_character_dialog(dialog)
+    QTimer.singleShot(0, lambda: show_character_dialog(dialog))
+    QTimer.singleShot(250, lambda: show_character_dialog(dialog))
 
 
 def regenerate_character_image(parent: DesktopPet, api_client: PetApiClient) -> None:

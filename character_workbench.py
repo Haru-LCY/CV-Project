@@ -956,4 +956,7 @@ class CharacterCreatorDialog(QDialog):
         self.web_view.page().setWebChannel(self.channel)
 
         html_path = resource_path("ui", "character_workbench.html")
+        self.web_view.loadFinished.connect(
+            lambda ok: print(f"Character workbench loaded: ok={ok}, url={self.web_view.url().toString()}")
+        )
         self.web_view.load(QUrl.fromLocalFile(str(html_path)))
