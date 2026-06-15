@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sys
 import textwrap
 import traceback
@@ -54,25 +55,14 @@ DEFAULT_CHARACTER_OPTIONS = {
         "认真优等生系",
         "慵懒系",
     ],
-    "identity_traits": [
-        "同班同学",
-        "学妹",
-        "学姐",
-        "青梅竹马",
-        "大小姐",
-        "学生会成员",
-        "社团同伴",
-        "图书委员",
-        "风纪委员",
-        "偶像练习生",
-        "便利店兼职",
-        "咖啡店店员",
-    ],
+    "identity_traits": [],
     "styles": ["anime_desktop_pet", "transparent_png", "live2d_like"],
     "defaults": {
         "appearance_traits": ["棕发", "蓝瞳", "中长发", "校服", "清纯"],
         "personality_traits": ["温柔治愈系", "认真优等生系"],
-        "identity_traits": ["同班同学"],
+        "identity_traits": [],
+        "personality_dimensions": {"温柔治愈系": 4, "认真优等生系": 3},
+        "appearance_style_dimensions": {"清纯": 4},
         "style": "anime_desktop_pet",
     },
 }
@@ -86,6 +76,26 @@ DEFAULT_CHARACTER_OPTIONS["appearance_traits"] = [
 
 def wrap_text(text: str, width: int = 12) -> str:
     return "\n".join(textwrap.wrap(text, width=width, break_long_words=True, break_on_hyphens=False))
+
+
+def clean_trait_list(traits: list[str] | None) -> list[str] | None:
+    if not traits:
+        return traits
+    result = []
+    for trait in traits:
+        text = re.sub(r"\(强度[1-5]/5\)$", "", str(trait).strip())
+        if text:
+            result.append(text)
+    return result
+
+
+def dimensions_from_legacy_traits(traits: list[str] | None) -> dict[str, int]:
+    result = {}
+    for trait in traits or []:
+        match = re.search(r"^(.*)\(强度([1-5])/5\)$", str(trait).strip())
+        if match:
+            result[match.group(1).strip()] = int(match.group(2))
+    return result
 
 
 @dataclass
@@ -109,6 +119,8 @@ class CharacterProfile:
     appearance_traits: list[str] | None = None
     personality_traits: list[str] | None = None
     identity_traits: list[str] | None = None
+    personality_dimensions: dict[str, int] | None = None
+    appearance_style_dimensions: dict[str, int] | None = None
     style: str | None = None
 
 
@@ -129,7 +141,20 @@ class PetApiClient:
         self.history: list[dict[str, str]] = []
 
     def get_character_options(self) -> dict:
-        return DEFAULT_CHARACTER_OPTIONS
+        options = json.loads(json.dumps(DEFAULT_CHARACTER_OPTIONS, ensure_ascii=False))
+        defaults = options.setdefault("defaults", {})
+        profile = self.character_profile
+        if profile.appearance_traits:
+            defaults["appearance_traits"] = profile.appearance_traits
+        if profile.personality_traits:
+            defaults["personality_traits"] = profile.personality_traits
+        if profile.personality_dimensions:
+            defaults["personality_dimensions"] = profile.personality_dimensions
+        if profile.appearance_style_dimensions:
+            defaults["appearance_style_dimensions"] = profile.appearance_style_dimensions
+        if profile.style:
+            defaults["style"] = profile.style
+        return options
 
     def respond(self, event: str, text: str, screenshot_base64: str | None = None) -> PetResponse:
         memory_query = self._memory_query(event, text)
@@ -231,9 +256,14 @@ class PetApiClient:
             expression_layers=data.get("expression_layers"),
             fgimage_target=data.get("fgimage_target") or DEFAULT_FGIMAGE_TARGET,
             emotion_images=data.get("emotion_images"),
-            appearance_traits=data.get("appearance_traits"),
-            personality_traits=data.get("personality_traits"),
+            appearance_traits=clean_trait_list(data.get("appearance_traits")),
+            personality_traits=clean_trait_list(data.get("personality_traits")),
             identity_traits=data.get("identity_traits"),
+            personality_dimensions=data.get("personality_dimensions")
+            or (data.get("trait_dimensions") or {}).get("personality")
+            or dimensions_from_legacy_traits(data.get("personality_traits")),
+            appearance_style_dimensions=data.get("appearance_style_dimensions")
+            or (data.get("trait_dimensions") or {}).get("appearance_style"),
             style=data.get("style"),
         )
 
@@ -252,6 +282,12 @@ class PetApiClient:
         character_config["appearance_traits"] = profile.appearance_traits
         character_config["personality_traits"] = profile.personality_traits
         character_config["identity_traits"] = profile.identity_traits
+        character_config["personality_dimensions"] = profile.personality_dimensions
+        character_config["appearance_style_dimensions"] = profile.appearance_style_dimensions
+        character_config["trait_dimensions"] = {
+            "personality": profile.personality_dimensions or {},
+            "appearance_style": profile.appearance_style_dimensions or {},
+        }
         character_config["style"] = profile.style
         character_config["user_name"] = user_name or DEFAULT_USER_NAME
         utils.save_config(config)
@@ -719,7 +755,7 @@ def open_character_settings(parent: DesktopPet, api_client: PetApiClient) -> Non
 
 def regenerate_character_image(parent: DesktopPet, api_client: PetApiClient) -> None:
     profile = api_client.character_profile
-    if not (profile.appearance_traits and profile.personality_traits and profile.identity_traits and profile.style):
+    if not (profile.appearance_traits and profile.personality_traits and profile.style):
         QMessageBox.information(parent, "缺少角色设定", "请先在角色设置中生成并应用角色。")
         return
     try:
@@ -729,6 +765,8 @@ def regenerate_character_image(parent: DesktopPet, api_client: PetApiClient) -> 
             personality_traits=profile.personality_traits,
             identity_traits=profile.identity_traits,
             style=profile.style,
+            personality_dimensions=profile.personality_dimensions,
+            appearance_style_dimensions=profile.appearance_style_dimensions,
         )
         api_client.remember_character(regenerated, api_client.user_name)
         parent.set_character(regenerated)

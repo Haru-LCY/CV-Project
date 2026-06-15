@@ -46,6 +46,8 @@ class GeneratedCharacterProfile:
     appearance_traits: list[str] | None = None
     personality_traits: list[str] | None = None
     identity_traits: list[str] | None = None
+    personality_dimensions: dict[str, int] | None = None
+    appearance_style_dimensions: dict[str, int] | None = None
     style: str | None = None
 
 
@@ -66,12 +68,18 @@ class LocalCharacterGenerator:
         personality_traits: list[str],
         identity_traits: list[str],
         style: str,
+        personality_dimensions: dict[str, int] | None = None,
+        appearance_style_dimensions: dict[str, int] | None = None,
     ) -> GeneratedCharacterProfile:
+        personality_dimensions = self._normalize_dimensions(personality_dimensions)
+        appearance_style_dimensions = self._normalize_dimensions(appearance_style_dimensions)
         profile_json = self._generate_description(
             user_name=user_name,
             appearance_traits=appearance_traits,
             personality_traits=personality_traits,
             identity_traits=identity_traits,
+            personality_dimensions=personality_dimensions,
+            appearance_style_dimensions=appearance_style_dimensions,
         )
         emotion_images = self._generate_emotion_images(
             profile_json,
@@ -79,6 +87,8 @@ class LocalCharacterGenerator:
             personality_traits,
             identity_traits,
             style,
+            personality_dimensions,
+            appearance_style_dimensions,
         )
         display_image_base64 = emotion_images["happy"]["display_image_base64"]
         return GeneratedCharacterProfile(
@@ -91,6 +101,8 @@ class LocalCharacterGenerator:
             appearance_traits=appearance_traits,
             personality_traits=personality_traits,
             identity_traits=identity_traits,
+            personality_dimensions=personality_dimensions,
+            appearance_style_dimensions=appearance_style_dimensions,
             style=style,
         )
 
@@ -121,19 +133,28 @@ class LocalCharacterGenerator:
         appearance_traits: list[str],
         personality_traits: list[str],
         identity_traits: list[str],
+        personality_dimensions: dict[str, int] | None = None,
+        appearance_style_dimensions: dict[str, int] | None = None,
     ) -> dict:
+        personality_guidance = self._format_dimension_guidance(personality_dimensions, "性格")
+        appearance_style_guidance = self._format_dimension_guidance(appearance_style_dimensions, "外貌风格")
+        identity_line = f"身份设定：{'、'.join(identity_traits)}" if identity_traits else ""
         prompt = f"""
 请根据下面选项生成一个日常系二次元桌宠角色设定。不要使用奇幻、战斗、恐怖、病娇或成人向设定。
 
 用户称呼：{user_name}
 外貌设定：{"、".join(appearance_traits)}
 性格设定：{"、".join(personality_traits)}
-身份设定：{"、".join(identity_traits)}
+{identity_line}
+{appearance_style_guidance}
+{personality_guidance}
+
+上面的创作取向只用于决定哪些特质更突出。生成的 name、persona、greeting 中禁止提到任何控制信息，不要出现“权重、强度、等级、维度、数值、分数、几分、五分”等表述，也不要写“带着几分某性格”。
 
 请只输出 JSON，不要 Markdown，不要解释。JSON 字段：
 {{
   "name": "2-4 个中文字符的角色名",
-  "persona": "120-180 字中文人设，包含外貌、性格、身份、与用户的相处方式",
+  "persona": "120-180 字中文人设，包含外貌、性格、与用户的相处方式",
   "greeting": "一句自然可爱的中文初始问候"
 }}
 """.strip()
@@ -180,7 +201,12 @@ class LocalCharacterGenerator:
         style: str,
         emotion_label: str,
         emotion_prompt: str,
+        personality_dimensions: dict[str, int] | None = None,
+        appearance_style_dimensions: dict[str, int] | None = None,
     ) -> str:
+        personality_guidance = self._format_dimension_guidance(personality_dimensions, "性格")
+        appearance_style_guidance = self._format_dimension_guidance(appearance_style_dimensions, "外貌风格")
+        identity_line = f"身份：{'、'.join(identity_traits)}" if identity_traits else ""
         return f"""
 生成一张日常系二次元桌宠角色立绘，纯白色背景，单人，全身或膝上构图，干净线稿，柔和上色，适合桌面宠物窗口展示。
 
@@ -188,11 +214,13 @@ class LocalCharacterGenerator:
 人设：{profile_json.get("persona", "")}
 外貌：{"、".join(appearance_traits)}
 性格：{"、".join(personality_traits)}
-身份：{"、".join(identity_traits)}
+{identity_line}
 画风：{style}
+{appearance_style_guidance}
+{personality_guidance}
 当前情感：{emotion_label}。表情要求：{emotion_prompt}。
 
-要求：可爱、清爽、日常服装。背景必须是干净纯白色，不要透明背景、不要棋盘格、不要渐变背景、不要场景背景、不要阴影底板、不要文字、水印、边框，不要暴露或成人向内容。
+要求：可爱、清爽、日常服装。创作取向只用于画面取舍，不要在画面中加入文字、数字、标签或维度图。背景必须是干净纯白色，不要透明背景、不要棋盘格、不要渐变背景、不要场景背景、不要阴影底板、不要文字、水印、边框，不要暴露或成人向内容。
 """.strip()
 
     def _build_reference_emotion_prompt(self, emotion_label: str, emotion_prompt: str) -> str:
@@ -214,6 +242,8 @@ class LocalCharacterGenerator:
         personality_traits: list[str],
         identity_traits: list[str],
         style: str,
+        personality_dimensions: dict[str, int] | None = None,
+        appearance_style_dimensions: dict[str, int] | None = None,
     ) -> dict:
         happy_prompt = self._build_image_prompt(
             profile_json,
@@ -223,6 +253,8 @@ class LocalCharacterGenerator:
             style,
             "happy",
             EMOTION_SPECS["happy"],
+            personality_dimensions,
+            appearance_style_dimensions,
         )
         happy_source_image = self._generate_source_image(happy_prompt)
         happy_image = self._make_desktop_pet_standee(happy_source_image)
@@ -251,6 +283,36 @@ class LocalCharacterGenerator:
                     print(f"Emotion image generation failed for {emotion}; using happy image fallback: {exc}")
                     result[emotion] = {"display_image_base64": happy_image}
         return result
+
+    def _normalize_dimensions(self, dimensions: Any) -> dict[str, int]:
+        if not isinstance(dimensions, dict):
+            return {}
+        result: dict[str, int] = {}
+        for trait, strength in dimensions.items():
+            trait_text = str(trait).strip()
+            if not trait_text:
+                continue
+            try:
+                strength_value = int(strength)
+            except (TypeError, ValueError):
+                strength_value = 3
+            result[trait_text] = min(5, max(1, strength_value))
+        return result
+
+    def _format_dimension_guidance(self, dimensions: dict[str, int] | None, label: str) -> str:
+        if not dimensions:
+            return ""
+        buckets = {
+            1: "只作为很轻的底色",
+            2: "作为辅助倾向",
+            3: "自然体现",
+            4: "明显体现",
+            5: "作为主要取向",
+        }
+        lines = [f"{label}创作取向："]
+        for trait, strength in dimensions.items():
+            lines.append(f"- {trait}：{buckets.get(strength, '自然体现')}")
+        return "\n".join(lines)
 
     def _generate_image(self, image_prompt: str, reference_image_base64: str | None = None) -> str:
         return self._make_desktop_pet_standee(self._generate_source_image(image_prompt, reference_image_base64))
@@ -490,6 +552,8 @@ class CharacterGenerationWorker(QThread):
         personality_traits: list[str],
         identity_traits: list[str],
         style: str,
+        personality_dimensions: dict[str, int] | None = None,
+        appearance_style_dimensions: dict[str, int] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -499,6 +563,8 @@ class CharacterGenerationWorker(QThread):
         self.personality_traits = personality_traits
         self.identity_traits = identity_traits
         self.style = style
+        self.personality_dimensions = personality_dimensions or {}
+        self.appearance_style_dimensions = appearance_style_dimensions or {}
 
     def run(self) -> None:
         try:
@@ -508,6 +574,8 @@ class CharacterGenerationWorker(QThread):
                 personality_traits=self.personality_traits,
                 identity_traits=self.identity_traits,
                 style=self.style,
+                personality_dimensions=self.personality_dimensions,
+                appearance_style_dimensions=self.appearance_style_dimensions,
             )
             self.finished.emit(profile, None)
         except Exception as exc:
@@ -568,15 +636,26 @@ class CharacterWorkbenchBridge(QObject):
         self.dialog.preview_is_current = False
         self.dialog.preview_user_name = payload.get("user_name") or self.default_user_name
         self.generationStarted.emit()
+        raw_appearance_traits = payload.get("appearance_traits") or self.default_options["defaults"]["appearance_traits"]
+        raw_personality_traits = (
+            payload.get("personality_traits") or self.default_options["defaults"]["personality_traits"]
+        )
+        appearance_traits = self._clean_traits(raw_appearance_traits)
+        personality_traits = self._clean_traits(raw_personality_traits)
+        personality_dimensions = self._normalize_dimensions(payload.get("personality_dimensions"))
+        if not personality_dimensions:
+            personality_dimensions = self._dimensions_from_legacy_traits(raw_personality_traits)
+        appearance_style_dimensions = self._normalize_dimensions(payload.get("appearance_style_dimensions"))
 
         self.generation_worker = CharacterGenerationWorker(
             api_client=self.api_client,
             user_name=self.dialog.preview_user_name,
-            appearance_traits=payload.get("appearance_traits") or self.default_options["defaults"]["appearance_traits"],
-            personality_traits=payload.get("personality_traits")
-            or self.default_options["defaults"]["personality_traits"],
-            identity_traits=payload.get("identity_traits") or self.default_options["defaults"]["identity_traits"],
+            appearance_traits=appearance_traits,
+            personality_traits=personality_traits,
+            identity_traits=payload.get("identity_traits") or [],
             style=payload.get("style") or self.default_options["defaults"]["style"],
+            personality_dimensions=personality_dimensions,
+            appearance_style_dimensions=appearance_style_dimensions,
             parent=self,
         )
         self.generation_worker.finished.connect(self.on_generation_finished)
@@ -634,6 +713,7 @@ class CharacterWorkbenchBridge(QObject):
             with card_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             profile = self._profile_from_card(data)
+            self._upgrade_card_dimensions(card_path, profile)
             self.dialog.preview_profile = profile
             self.dialog.preview_is_current = True
             self.dialog.preview_user_name = self.api_client.user_name or self.default_user_name
@@ -654,11 +734,13 @@ class CharacterWorkbenchBridge(QObject):
             "greeting": profile.greeting,
             "image_src": self._profile_image_src(profile),
             "emotion_images": self._emotion_images_payload(profile),
+            "personality_dimensions": getattr(profile, "personality_dimensions", None) or {},
+            "appearance_style_dimensions": getattr(profile, "appearance_style_dimensions", None) or {},
         }
 
     def _character_card_payload(self, profile: Any) -> dict:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "character_id": getattr(profile, "character_id", None),
             "name": getattr(profile, "name", ""),
             "persona": getattr(profile, "persona", ""),
@@ -667,6 +749,12 @@ class CharacterWorkbenchBridge(QObject):
             "appearance_traits": getattr(profile, "appearance_traits", None) or [],
             "personality_traits": getattr(profile, "personality_traits", None) or [],
             "identity_traits": getattr(profile, "identity_traits", None) or [],
+            "personality_dimensions": getattr(profile, "personality_dimensions", None) or {},
+            "appearance_style_dimensions": getattr(profile, "appearance_style_dimensions", None) or {},
+            "trait_dimensions": {
+                "personality": getattr(profile, "personality_dimensions", None) or {},
+                "appearance_style": getattr(profile, "appearance_style_dimensions", None) or {},
+            },
             "style": getattr(profile, "style", None),
             "display_image_base64": getattr(profile, "display_image_base64", None),
             "emotion_images": getattr(profile, "emotion_images", None) or {},
@@ -711,7 +799,20 @@ class CharacterWorkbenchBridge(QObject):
             raise ValueError("角色卡路径不在 character_cards 目录中")
         return card_path
 
+    def _upgrade_card_dimensions(self, path: Path, profile: GeneratedCharacterProfile) -> None:
+        payload = self._character_card_payload(profile)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=4)
+            f.write("\n")
+
     def _profile_from_card(self, data: dict) -> GeneratedCharacterProfile:
+        trait_dimensions = data.get("trait_dimensions") if isinstance(data.get("trait_dimensions"), dict) else {}
+        raw_personality_traits = data.get("personality_traits") or []
+        personality_dimensions = self._normalize_dimensions(
+            data.get("personality_dimensions") or trait_dimensions.get("personality")
+        )
+        if not personality_dimensions:
+            personality_dimensions = self._dimensions_from_legacy_traits(raw_personality_traits)
         return GeneratedCharacterProfile(
             character_id=data.get("character_id") or f"local-{uuid.uuid4().hex[:12]}",
             name=data.get("name") or "角色",
@@ -721,11 +822,51 @@ class CharacterWorkbenchBridge(QObject):
             expression_layers=data.get("expression_layers"),
             fgimage_target=data.get("fgimage_target") or "ムラサメb",
             emotion_images=data.get("emotion_images") or {},
-            appearance_traits=data.get("appearance_traits") or [],
-            personality_traits=data.get("personality_traits") or [],
+            appearance_traits=self._clean_traits(data.get("appearance_traits") or []),
+            personality_traits=self._clean_traits(raw_personality_traits),
             identity_traits=data.get("identity_traits") or [],
+            personality_dimensions=personality_dimensions,
+            appearance_style_dimensions=self._normalize_dimensions(
+                data.get("appearance_style_dimensions") or trait_dimensions.get("appearance_style")
+            ),
             style=data.get("style"),
         )
+
+    def _clean_traits(self, traits: Any) -> list[str]:
+        if not isinstance(traits, list):
+            return []
+        result = []
+        for trait in traits:
+            text = re.sub(r"\(强度[1-5]/5\)$", "", str(trait).strip())
+            if text:
+                result.append(text)
+        return result
+
+    def _dimensions_from_legacy_traits(self, traits: Any) -> dict[str, int]:
+        if not isinstance(traits, list):
+            return {}
+        result: dict[str, int] = {}
+        for trait in traits:
+            text = str(trait).strip()
+            match = re.search(r"^(.*)\(强度([1-5])/5\)$", text)
+            if match:
+                result[match.group(1).strip()] = int(match.group(2))
+        return result
+
+    def _normalize_dimensions(self, dimensions: Any) -> dict[str, int]:
+        if not isinstance(dimensions, dict):
+            return {}
+        result: dict[str, int] = {}
+        for trait, strength in dimensions.items():
+            trait_text = str(trait).strip()
+            if not trait_text:
+                continue
+            try:
+                strength_value = int(strength)
+            except (TypeError, ValueError):
+                strength_value = 3
+            result[trait_text] = min(5, max(1, strength_value))
+        return result
 
     def _profile_image_src(self, profile: Any) -> str | None:
         return self._image_src_from_values(

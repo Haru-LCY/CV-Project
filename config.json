@@ -4,12 +4,33 @@
         "session_id": "local-user",
         "timeout_seconds": 120
     },
+    "vl": {
+        "model": "qwen3-vl-flash",
+        "interval_seconds": 30,
+        "max_width": 1280,
+        "jpeg_quality": 75
+    },
     "display": {
         "preset": "balanced",
         "custom": {
             "visible_ratio": 0.4,
             "text_x_offset": 140,
             "text_y_offset": 20
+        }
+    },
+    "memory": {
+        "enabled": true,
+        "provider": "mem0_local",
+        "user_id": null,
+        "top_k": 5,
+        "store_screenshots": false,
+        "desktop_summary_enabled": true,
+        "storage_path": ".memory/local_memory.jsonl",
+        "mem0": {
+            "history_db_path": ".memory/mem0_history.db",
+            "vector_path": ".memory/qdrant",
+            "llm": null,
+            "embedder": null
         }
     },
     "character": {
@@ -50,7 +71,7 @@
             "大小姐"
         ],
         "style": "anime_desktop_pet",
-        "user_name": "小姐",
+        "user_name": "用户",
         "auto_open_creator": true
     }
 }

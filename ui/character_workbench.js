@@ -6,6 +6,9 @@ let historyCards = [];
 
 const els = {};
 const EMOTIONS = ["happy", "angry", "shy", "sad"];
+const SINGLE_CHOICE_APPEARANCE_GROUPS = new Set(["发色", "瞳色"]);
+const APPEARANCE_STRENGTH_GROUPS = new Set(["整体风格"]);
+const DEFAULT_PERSONALITY_STRENGTH = 3;
 
 document.addEventListener("DOMContentLoaded", () => {
   for (const id of [
@@ -15,7 +18,6 @@ document.addEventListener("DOMContentLoaded", () => {
     "styleSelect",
     "appearanceTraits",
     "personalityTraits",
-    "identityTraits",
     "imagePlaceholder",
     "previewImage",
     "emotionTabs",
@@ -113,15 +115,19 @@ function renderInitialState(state) {
     options.appearance_groups || null,
     options.appearance_traits || [],
     defaults.appearance_traits || [],
+    defaults.appearance_style_dimensions || {},
   );
-  renderChips(els.personalityTraits, options.personality_traits || [], defaults.personality_traits || []);
-  renderChips(els.identityTraits, options.identity_traits || [], defaults.identity_traits || []);
+  renderTraitControls(
+    els.personalityTraits,
+    options.personality_traits || [],
+    defaults.personality_traits || [],
+    defaults.personality_dimensions || {},
+    "强度",
+  );
 
   els.userName.addEventListener("input", markStale);
   els.styleSelect.addEventListener("change", markStale);
-  document.querySelectorAll(".chip input").forEach((input) => {
-    input.addEventListener("change", markStale);
-  });
+  bindTraitControlEvents();
 
   els.generateButton.addEventListener("click", startGeneration);
   els.loadHistoryButton.addEventListener("click", loadSelectedHistory);
@@ -175,27 +181,38 @@ function renderStyleSelect(styles, defaultStyle) {
   }
 }
 
-function renderAppearanceGroups(container, groups, fallbackValues, defaults) {
+function renderAppearanceGroups(container, groups, fallbackValues, defaults, styleDimensions) {
   container.innerHTML = "";
-  const selected = new Set(defaults);
+  const selected = new Set(defaults.map(baseTraitName));
   const normalizedGroups = normalizeAppearanceGroups(groups, fallbackValues);
   let groupIndex = 0;
   for (const [groupName, values] of normalizedGroups) {
+    const isSingleChoice = SINGLE_CHOICE_APPEARANCE_GROUPS.has(groupName);
+    const usesStrength = APPEARANCE_STRENGTH_GROUPS.has(groupName);
     const details = document.createElement("details");
     details.className = "appearance-folder";
+    details.classList.toggle("is-single-choice", isSingleChoice);
+    details.classList.toggle("uses-strength", usesStrength);
     details.open = groupIndex < 2 || values.some((value) => selected.has(value));
 
     const summary = document.createElement("summary");
     const title = document.createElement("span");
     title.textContent = groupName;
     const count = document.createElement("em");
-    count.textContent = `${values.length} 项`;
+    count.textContent = usesStrength ? "可调" : isSingleChoice ? "单选" : `${values.length} 项`;
     summary.append(title, count);
     details.appendChild(summary);
 
     const list = document.createElement("div");
     list.className = "chip-list nested";
-    renderChipItems(list, values, selected);
+    if (usesStrength) {
+      renderTraitControls(list, values, defaults, styleDimensions, "倾向");
+    } else {
+      renderChipItems(list, values, selected, {
+        inputType: isSingleChoice ? "radio" : "checkbox",
+        name: `appearance-${groupIndex}`,
+      });
+    }
     details.appendChild(list);
     container.appendChild(details);
     groupIndex += 1;
@@ -220,12 +237,17 @@ function renderChips(container, values, defaults) {
   renderChipItems(container, values, selected);
 }
 
-function renderChipItems(container, values, selected) {
+function renderChipItems(container, values, selected, options = {}) {
+  const inputType = options.inputType || "checkbox";
   for (const value of values) {
     const label = document.createElement("label");
     label.className = "chip";
+    label.classList.toggle("is-radio", inputType === "radio");
     const input = document.createElement("input");
-    input.type = "checkbox";
+    input.type = inputType;
+    if (options.name) {
+      input.name = options.name;
+    }
     input.value = value;
     input.checked = selected.has(value);
     const span = document.createElement("span");
@@ -235,16 +257,137 @@ function renderChipItems(container, values, selected) {
   }
 }
 
+function renderTraitControls(container, values, defaults, dimensions = {}, strengthLabelText = "强度") {
+  container.innerHTML = "";
+  const selected = new Set(defaults.map(baseTraitName));
+  const strengths = new Map(defaults.map((value) => [baseTraitName(value), traitStrength(value)]));
+  for (const [trait, strength] of Object.entries(normalizeTraitDimensions(dimensions))) {
+    strengths.set(trait, strength);
+  }
+
+  for (const value of values) {
+    const item = document.createElement("label");
+    item.className = "trait-control";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "trait-toggle";
+    checkbox.value = value;
+    checkbox.checked = selected.has(value);
+
+    const body = document.createElement("span");
+    body.className = "trait-body";
+
+    const name = document.createElement("span");
+    name.className = "trait-name";
+    name.textContent = value;
+
+    const strengthWrap = document.createElement("span");
+    strengthWrap.className = "trait-strength";
+
+    const strengthLabel = document.createElement("span");
+    strengthLabel.className = "strength-label";
+    strengthLabel.textContent = strengthLabelText;
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "1";
+    slider.max = "5";
+    slider.step = "1";
+    slider.value = String(strengths.get(value) || DEFAULT_PERSONALITY_STRENGTH);
+    slider.disabled = !checkbox.checked;
+
+    const output = document.createElement("output");
+    output.textContent = slider.value;
+
+    slider.addEventListener("input", () => {
+      output.textContent = slider.value;
+    });
+    checkbox.addEventListener("change", () => {
+      slider.disabled = !checkbox.checked;
+      item.classList.toggle("is-selected", checkbox.checked);
+    });
+
+    item.classList.toggle("is-selected", checkbox.checked);
+    strengthWrap.append(strengthLabel, slider, output);
+    body.append(name, strengthWrap);
+    item.append(checkbox, body);
+    container.appendChild(item);
+  }
+}
+
+function baseTraitName(value) {
+  return String(value || "").replace(/\(强度[1-5]\/5\)$/, "");
+}
+
+function traitStrength(value) {
+  const match = String(value || "").match(/\(强度([1-5])\/5\)$/);
+  return match ? Number(match[1]) : DEFAULT_PERSONALITY_STRENGTH;
+}
+
+function normalizeTraitDimensions(dimensions) {
+  if (!dimensions) {
+    return {};
+  }
+  if (Array.isArray(dimensions)) {
+    return Object.fromEntries(
+      dimensions
+        .filter((item) => item && item.trait)
+        .map((item) => [item.trait, clampStrength(item.strength)]),
+    );
+  }
+  if (typeof dimensions === "object") {
+    return Object.fromEntries(
+      Object.entries(dimensions).map(([trait, strength]) => [trait, clampStrength(strength)]),
+    );
+  }
+  return {};
+}
+
+function clampStrength(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return DEFAULT_PERSONALITY_STRENGTH;
+  }
+  return Math.min(5, Math.max(1, Math.round(number)));
+}
+
 function selectedValues(container) {
-  return Array.from(container.querySelectorAll("input:checked")).map((input) => input.value);
+  return Array.from(container.querySelectorAll("input:checked")).map((input) => baseTraitName(input.value));
+}
+
+function selectedPersonalityValues(container) {
+  return Array.from(container.querySelectorAll(".trait-control")).flatMap((item) => {
+    const checkbox = item.querySelector(".trait-toggle");
+    if (!checkbox || !checkbox.checked) {
+      return [];
+    }
+    return [baseTraitName(checkbox.value)];
+  });
+}
+
+function selectedTraitDimensions(container) {
+  return Array.from(container.querySelectorAll(".trait-control")).flatMap((item) => {
+    const checkbox = item.querySelector(".trait-toggle");
+    if (!checkbox || !checkbox.checked) {
+      return [];
+    }
+    const slider = item.querySelector(".trait-strength input");
+    const strength = slider ? clampStrength(slider.value) : DEFAULT_PERSONALITY_STRENGTH;
+    return [[baseTraitName(checkbox.value), strength]];
+  });
 }
 
 function startGeneration() {
   const payload = {
     user_name: els.userName.value.trim() || "用户",
     appearance_traits: selectedValues(els.appearanceTraits),
-    personality_traits: selectedValues(els.personalityTraits),
-    identity_traits: selectedValues(els.identityTraits),
+    personality_traits: selectedPersonalityValues(els.personalityTraits),
+    identity_traits: [],
+    personality_dimensions: Object.fromEntries(selectedTraitDimensions(els.personalityTraits)),
+    appearance_style_dimensions: Object.fromEntries(
+      selectedTraitDimensions(els.appearanceTraits).filter(([trait]) => APPEARANCE_STRENGTH_GROUPS.size && trait),
+    ),
     style: els.styleSelect.value,
   };
   bridge.startGeneration(JSON.stringify(payload));
@@ -317,9 +460,18 @@ function setBusy(isBusy) {
   els.cancelButton.disabled = isBusy;
   els.userName.disabled = isBusy;
   els.styleSelect.disabled = isBusy;
-  document.querySelectorAll(".chip input").forEach((input) => {
+  document.querySelectorAll(".chip input, .trait-control input").forEach((input) => {
     input.disabled = isBusy;
   });
+  if (!isBusy) {
+    document.querySelectorAll(".trait-control").forEach((item) => {
+      const checkbox = item.querySelector(".trait-toggle");
+      const slider = item.querySelector(".trait-strength input");
+      if (checkbox && slider) {
+        slider.disabled = !checkbox.checked;
+      }
+    });
+  }
 }
 
 function showPlaceholder(text) {
@@ -327,4 +479,13 @@ function showPlaceholder(text) {
   els.previewImage.removeAttribute("src");
   els.imagePlaceholder.hidden = false;
   els.imagePlaceholder.textContent = text;
+}
+
+function bindTraitControlEvents() {
+  document.querySelectorAll(".chip input, .trait-toggle").forEach((input) => {
+    input.addEventListener("change", markStale);
+  });
+  document.querySelectorAll(".trait-strength input").forEach((input) => {
+    input.addEventListener("change", markStale);
+  });
 }

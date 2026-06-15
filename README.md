@@ -85,6 +85,9 @@ uv run python pet.py
         "appearance_traits": null,
         "personality_traits": null,
         "identity_traits": null,
+        "personality_dimensions": null,
+        "appearance_style_dimensions": null,
+        "trait_dimensions": null,
         "style": null,
         "user_name": "用户",
         "auto_open_creator": true
@@ -111,6 +114,9 @@ uv run python pet.py
 - `memory.storage_path`: 本地兜底记忆文件路径。
 - `memory.mem0`: Mem0 本地路径和可选 LLM/embedding 配置；不填 `llm`/`embedder` 时使用 Mem0 默认配置，失败会自动退回 JSONL。
 - `character.*`: 当前角色卡、图片、情感图和生成选项。
+- `character.personality_dimensions`: 性格维度图，保存性格标签到 1-5 内部强弱值的映射；生成 prompt 会把它作为控制信息使用，不会要求模型写出数值。
+- `character.appearance_style_dimensions`: 外貌中“整体风格”的维度图，保存风格标签到 1-5 内部倾向值的映射。
+- `character.trait_dimensions`: 维度图的分组形式，当前包含 `personality` 和 `appearance_style`，用于角色卡兼容和后续扩展。
 - `character.user_name`: 用户称呼，会显示在输入气泡中，也会传给回复 API。
 - `character.auto_open_creator`: 没有角色卡时是否自动打开角色设置窗口。
 
