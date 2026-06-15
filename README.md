@@ -163,6 +163,9 @@ python -m scripts.build_executable --dry-run
 - `memory.desktop_summary_enabled`: 是否保存桌面观察摘要。
 - `memory.storage_path`: 本地兜底记忆文件路径。
 - `memory.mem0`: Mem0 本地路径和可选 LLM/embedding 配置；不填 `llm`/`embedder` 时使用 Mem0 默认配置，失败会自动退回 JSONL。
+- `agent_tools.enabled`: 是否启用本地桌面工具调用。默认 `true`。
+- `agent_tools.desktop_root`: 工具允许操作的桌面目录，默认 `~/Desktop`。
+- `agent_tools.delete_requires_confirmation`: 删除类动作必须用户确认；当前实现由角色询问，点击“确认”后移到废纸篓。
 - `character.*`: 当前角色卡、图片、情感图和生成选项。
 - `character.personality_dimensions`: 性格维度图，保存性格标签到 1-5 内部强弱值的映射；生成 prompt 会把它作为控制信息使用，不会要求模型写出数值。
 - `character.appearance_style_dimensions`: 外貌中“整体风格”的维度图，保存风格标签到 1-5 内部倾向值的映射。
@@ -192,3 +195,11 @@ python -m scripts.build_executable --dry-run
 `emotion` 可为 `happy`、`angry`、`shy`、`sad`。桌面视觉回复可以额外返回 `desktop_summary`，用于长期记忆，不显示给用户。如果当前角色卡保存了对应情感图，桌宠会切换到对应图片。
 
 长期记忆会在每次回复前检索相关内容并注入提示词，但角色卡优先级更高；如果记忆和角色设定冲突，以角色卡为准。托盘菜单中“清空本轮对话”只清最近上下文，“清空长期记忆”会清除当前用户的本地长期记忆。
+
+## Agent 桌面工具
+
+启用 `agent_tools.enabled` 后，用户输入中的桌面工具请求会先被本地路由处理：
+
+- “删除桌面上的白头发少女图片”这类请求会枚举桌面直接图片文件，生成缩略图索引表并调用 `vl.model` 做内容匹配。匹配结果会由角色询问，并在桌宠窗口显示“确认 / 拒绝”选项，确认后才移到废纸篓。
+- “整理桌面 / 给桌面文件分类”这类请求会把桌面直接文件名和扩展名交给文本模型生成分类计划，然后移动到固定白名单文件夹：`图片`、`文档`、`视频`、`音频`、`压缩包`、`安装包`、`代码`、`数据表格`、`快捷方式`、`其他`。
+- 工具只操作 `agent_tools.desktop_root` 下的直接文件，不递归处理文件夹；模型返回的绝对路径、`../`、非白名单分类都会被拒绝。

@@ -12,7 +12,7 @@ from Murasame.paths import resource_path
 from scripts.character_runtime import avatar_values_for_emotion
 from scripts.pet_api import PetApiClient
 from scripts.pet_defaults import DEFAULT_EXPRESSION_LAYERS, DEFAULT_FGIMAGE_TARGET, GENERATED_AVATAR_SCALE
-from scripts.pet_workers import ApiWorker
+from scripts.pet_workers import ApiWorker, ToolActionWorker
 from scripts.profile import CharacterProfile, PetResponse
 from scripts.workbench.dialog import CharacterCreatorDialog
 
@@ -47,9 +47,12 @@ class DesktopPet(QLabel):
         self.touch_head = False
         self.head_press_x: int | None = None
         self.llm_worker: ApiWorker | None = None
+        self.tool_worker: ToolActionWorker | None = None
+        self.pending_tool_action: dict | None = None
         self.screen_worker = None
         self.character_dialog: CharacterCreatorDialog | None = None
         self.settings_button_size = self._scaled_value(34)
+        self.confirm_button_size = QSize(self._scaled_value(66), self._scaled_value(30))
 
         config = utils.get_config()
         display_config = config.get("display", {})
@@ -80,6 +83,12 @@ class DesktopPet(QLabel):
         self.exit_button.setIcon(self.style().standardIcon(QStyle.SP_DialogCloseButton))
         self.exit_button.setIconSize(QSize(self._scaled_value(18), self._scaled_value(18)))
         self.exit_button.clicked.connect(QApplication.instance().quit)
+
+        self.confirm_tool_button = self._create_tool_choice_button("确认", "确认执行")
+        self.confirm_tool_button.clicked.connect(self.confirm_pending_tool_action)
+        self.reject_tool_button = self._create_tool_choice_button("拒绝", "拒绝执行")
+        self.reject_tool_button.clicked.connect(self.reject_pending_tool_action)
+        self._hide_tool_choice_buttons()
 
         self.typing_timer = QTimer()
         self.typing_timer.timeout.connect(self._typing_step)
@@ -125,6 +134,29 @@ class DesktopPet(QLabel):
             QToolButton:hover {
                 background: rgba(255, 246, 250, 240);
                 border-color: rgba(80, 48, 60, 190);
+            }
+            """
+        )
+        return button
+
+    def _create_tool_choice_button(self, text: str, tooltip: str) -> QToolButton:
+        button = QToolButton(self)
+        button.setFixedSize(self.confirm_button_size)
+        button.setText(text)
+        button.setToolTip(tooltip)
+        button.setCursor(Qt.PointingHandCursor)
+        button.setStyleSheet(
+            """
+            QToolButton {
+                background: rgba(44, 22, 28, 225);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 210);
+                border-radius: 10px;
+                padding: 4px 10px;
+                font-weight: 700;
+            }
+            QToolButton:hover {
+                background: rgba(90, 45, 58, 240);
             }
             """
         )
@@ -189,6 +221,34 @@ class DesktopPet(QLabel):
         self.exit_button.move(x + self.settings_button_size + gap, y)
         self.settings_button.raise_()
         self.exit_button.raise_()
+        self._position_tool_choice_buttons()
+
+    def _position_tool_choice_buttons(self) -> None:
+        if not hasattr(self, "confirm_tool_button") or not hasattr(self, "reject_tool_button"):
+            return
+        margin = self._scaled_value(10)
+        gap = self._scaled_value(8)
+        visible_height = max(self.confirm_button_size.height() + margin * 2, int(self.height() * self.visible_ratio))
+        total_width = self.confirm_button_size.width() * 2 + gap
+        x = max(margin, min(self.text_x_offset_default, self.width() - total_width - margin))
+        y = max(margin, visible_height - self.confirm_button_size.height() - margin)
+        self.confirm_tool_button.move(x, y)
+        self.reject_tool_button.move(x + self.confirm_button_size.width() + gap, y)
+        self.confirm_tool_button.raise_()
+        self.reject_tool_button.raise_()
+
+    def _show_tool_choice_buttons(self) -> None:
+        self._position_tool_choice_buttons()
+        self.confirm_tool_button.show()
+        self.reject_tool_button.show()
+        self.confirm_tool_button.raise_()
+        self.reject_tool_button.raise_()
+
+    def _hide_tool_choice_buttons(self) -> None:
+        if hasattr(self, "confirm_tool_button"):
+            self.confirm_tool_button.hide()
+        if hasattr(self, "reject_tool_button"):
+            self.reject_tool_button.hide()
 
     def _set_avatar(
         self,
@@ -387,6 +447,15 @@ class DesktopPet(QLabel):
             return
         if result.session_id:
             self.api_client.session_id = result.session_id
+        if result.tool_action:
+            self._handle_tool_action(result)
+            return
+        self._show_pet_response(result)
+
+    def _show_pet_response(self, result: PetResponse) -> None:
+        if not result.tool_action:
+            self.pending_tool_action = None
+            self._hide_tool_choice_buttons()
         self.latest_response = f"「{wrap_text(result.text)}」"
         self.show_text(self.latest_response, typing=True)
         self.input_buffer = ""
@@ -399,3 +468,51 @@ class DesktopPet(QLabel):
                 layers=self.character.expression_layers,
                 fgimage_target=self.character.fgimage_target,
             )
+
+    def _handle_tool_action(self, result: PetResponse) -> None:
+        action = result.tool_action or {}
+        if action.get("type") != "trash_files":
+            self._show_pet_response(
+                PetResponse(text="工具动作不受支持，我没有执行。", emotion="sad", session_id=self.api_client.session_id)
+            )
+            return
+
+        files = action.get("files") if isinstance(action.get("files"), list) else []
+        names = [str(file_info.get("name")) for file_info in files if isinstance(file_info, dict) and file_info.get("name")]
+        if not names:
+            self._show_pet_response(PetResponse(text="没有有效文件可操作，我不会执行。", emotion="sad"))
+            return
+        preview_names = "、".join(names[:4])
+        if len(names) > 4:
+            preview_names += f" 等 {len(names)} 个文件"
+        self.pending_tool_action = action
+        self.latest_response = f"「{wrap_text(f'{result.text} 将移到废纸篓：{preview_names}。要确认吗？')}」"
+        self.show_text(self.latest_response, typing=True)
+        self.input_buffer = ""
+        self.preedit_text = ""
+        self._show_tool_choice_buttons()
+
+    def confirm_pending_tool_action(self) -> None:
+        action = self.pending_tool_action
+        if not action:
+            self._show_pet_response(PetResponse(text="没有待确认的操作。", emotion="sad"))
+            return
+        self.pending_tool_action = None
+        self._hide_tool_choice_buttons()
+        self.show_text("【 系统 】\n  正在移到废纸篓...", typing=False)
+        self.tool_worker = ToolActionWorker(self.api_client, action)
+        self.tool_worker.finished.connect(self.on_tool_action_result)
+        self.tool_worker.start()
+
+    def reject_pending_tool_action(self) -> None:
+        self.pending_tool_action = None
+        self._hide_tool_choice_buttons()
+        self._show_pet_response(PetResponse(text="已拒绝，没有移动任何文件。", emotion="happy"))
+
+    def on_tool_action_result(self, result: PetResponse | None, error: str | None) -> None:
+        if error or result is None:
+            self.show_text(f"【 系统错误 】\n  {error or 'unknown error'}", typing=False)
+            return
+        if result.session_id:
+            self.api_client.session_id = result.session_id
+        self._show_pet_response(result)

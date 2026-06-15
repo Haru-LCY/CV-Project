@@ -13,6 +13,7 @@ class PetResponse:
     text: str
     emotion: str | None = None
     session_id: str | None = None
+    tool_action: dict | None = None
 
 
 @dataclass

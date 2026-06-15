@@ -71,3 +71,20 @@ class ApiWorker(QThread):
         except Exception as exc:
             traceback.print_exc()
             self.finished.emit(None, f"{type(exc).__name__}: {exc}")
+
+
+class ToolActionWorker(QThread):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, api_client: PetApiClient, action: dict, parent=None) -> None:
+        super().__init__(parent)
+        self.api_client = api_client
+        self.action = action
+
+    def run(self) -> None:
+        try:
+            result = self.api_client.confirm_tool_action(self.action)
+            self.finished.emit(result, None)
+        except Exception as exc:
+            traceback.print_exc()
+            self.finished.emit(None, f"{type(exc).__name__}: {exc}")

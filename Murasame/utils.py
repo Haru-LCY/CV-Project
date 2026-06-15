@@ -39,6 +39,11 @@ DEFAULT_CONFIG = {
             "embedder": None,
         },
     },
+    "agent_tools": {
+        "enabled": True,
+        "desktop_root": "~/Desktop",
+        "delete_requires_confirmation": True,
+    },
     "character": {
         "character_id": None,
         "name": "丛雨",
