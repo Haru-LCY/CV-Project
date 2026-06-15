@@ -4,7 +4,7 @@ import sys
 import textwrap
 
 from PyQt5.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QFontDatabase, QIcon, QImage, QPainter, QPixmap
+from PyQt5.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QImage, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QStyle, QToolButton
 
 from Murasame import utils
@@ -50,10 +50,12 @@ class DesktopPet(QLabel):
         self.llm_worker: ApiWorker | None = None
         self.tool_worker: ToolActionWorker | None = None
         self.pending_tool_action: dict | None = None
+        self.pending_tool_choice_index = 0
+        self.pending_tool_prompt_text = ""
+        self.tool_choice_rects: list[QRect] = []
         self.screen_worker = None
         self.character_dialog: CharacterCreatorDialog | None = None
         self.settings_button_size = self._scaled_value(34)
-        self.confirm_button_size = QSize(self._scaled_value(66), self._scaled_value(30))
 
         config = utils.get_config()
         display_config = config.get("display", {})
@@ -87,12 +89,6 @@ class DesktopPet(QLabel):
         self.exit_button.setIcon(self.style().standardIcon(QStyle.SP_DialogCloseButton))
         self.exit_button.setIconSize(QSize(self._scaled_value(18), self._scaled_value(18)))
         self.exit_button.clicked.connect(QApplication.instance().quit)
-
-        self.confirm_tool_button = self._create_tool_choice_button("确认", "确认执行")
-        self.confirm_tool_button.clicked.connect(self.confirm_pending_tool_action)
-        self.reject_tool_button = self._create_tool_choice_button("拒绝", "拒绝执行")
-        self.reject_tool_button.clicked.connect(self.reject_pending_tool_action)
-        self._hide_tool_choice_buttons()
 
         self.typing_timer = QTimer()
         self.typing_timer.timeout.connect(self._typing_step)
@@ -138,29 +134,6 @@ class DesktopPet(QLabel):
             QToolButton:hover {
                 background: rgba(255, 246, 250, 240);
                 border-color: rgba(80, 48, 60, 190);
-            }
-            """
-        )
-        return button
-
-    def _create_tool_choice_button(self, text: str, tooltip: str) -> QToolButton:
-        button = QToolButton(self)
-        button.setFixedSize(self.confirm_button_size)
-        button.setText(text)
-        button.setToolTip(tooltip)
-        button.setCursor(Qt.PointingHandCursor)
-        button.setStyleSheet(
-            """
-            QToolButton {
-                background: rgba(44, 22, 28, 225);
-                color: white;
-                border: 1px solid rgba(255, 255, 255, 210);
-                border-radius: 10px;
-                padding: 4px 10px;
-                font-weight: 700;
-            }
-            QToolButton:hover {
-                background: rgba(90, 45, 58, 240);
             }
             """
         )
@@ -225,34 +198,11 @@ class DesktopPet(QLabel):
         self.exit_button.move(x + self.settings_button_size + gap, y)
         self.settings_button.raise_()
         self.exit_button.raise_()
-        self._position_tool_choice_buttons()
 
-    def _position_tool_choice_buttons(self) -> None:
-        if not hasattr(self, "confirm_tool_button") or not hasattr(self, "reject_tool_button"):
+    def _update_tool_choice_styles(self) -> None:
+        if not self.pending_tool_action:
             return
-        margin = self._scaled_value(10)
-        gap = self._scaled_value(8)
-        visible_height = max(self.confirm_button_size.height() + margin * 2, int(self.height() * self.visible_ratio))
-        total_width = self.confirm_button_size.width() * 2 + gap
-        x = max(margin, min(self.text_x_offset_default, self.width() - total_width - margin))
-        y = max(margin, visible_height - self.confirm_button_size.height() - margin)
-        self.confirm_tool_button.move(x, y)
-        self.reject_tool_button.move(x + self.confirm_button_size.width() + gap, y)
-        self.confirm_tool_button.raise_()
-        self.reject_tool_button.raise_()
-
-    def _show_tool_choice_buttons(self) -> None:
-        self._position_tool_choice_buttons()
-        self.confirm_tool_button.show()
-        self.reject_tool_button.show()
-        self.confirm_tool_button.raise_()
-        self.reject_tool_button.raise_()
-
-    def _hide_tool_choice_buttons(self) -> None:
-        if hasattr(self, "confirm_tool_button"):
-            self.confirm_tool_button.hide()
-        if hasattr(self, "reject_tool_button"):
-            self.reject_tool_button.hide()
+        self._set_pending_tool_display(typing=False)
 
     def _set_avatar(
         self,
@@ -299,12 +249,14 @@ class DesktopPet(QLabel):
 
     def start_move(self, event) -> None:
         if event.button() == Qt.LeftButton:
+            if self._tool_choice_clicked(event.pos()):
+                return
             visible_height = int(self.height() * self.visible_ratio)
             if event.y() < visible_height // 2:
                 self.touch_head = True
                 self.head_press_x = event.x()
                 self.setCursor(Qt.OpenHandCursor)
-            elif event.y() > int(visible_height * 0.7) or self._text_clicked(event.pos()):
+            elif event.y() > int(visible_height * 0.7):
                 self.begin_text_input()
         if event.button() == Qt.MiddleButton:
             self.offset = event.pos()
@@ -401,7 +353,53 @@ class DesktopPet(QLabel):
             painter.drawText(rect.translated(dx, dy), align_flag, self.display_text)
         painter.setPen(Qt.white)
         painter.drawText(rect, align_flag, self.display_text)
+        self._update_tool_choice_rects(rect)
         painter.end()
+
+    def _tool_choice_text(self) -> str:
+        agree_prefix = "> " if self.pending_tool_choice_index == 0 else "  "
+        reject_prefix = "> " if self.pending_tool_choice_index == 1 else "  "
+        return f"{agree_prefix}同意\n{reject_prefix}拒绝"
+
+    def _set_pending_tool_display(self, typing: bool = False) -> None:
+        if not self.pending_tool_prompt_text:
+            return
+        self.latest_response = f"「{wrap_text(self.pending_tool_prompt_text)}」\n\n{self._tool_choice_text()}"
+        self.show_text(self.latest_response, typing=typing)
+
+    def _update_tool_choice_rects(self, text_rect: QRect) -> None:
+        self.tool_choice_rects = []
+        if not self.pending_tool_action or not self.display_text:
+            return
+        lines = self.display_text.splitlines()
+        if len(lines) < 2:
+            return
+        metrics = QFontMetrics(self.text_font)
+        line_height = metrics.lineSpacing()
+        block_height = line_height * len(lines)
+        top = text_rect.bottom() - block_height + 1
+        option_start = max(0, len(lines) - 2)
+        for index in range(option_start, len(lines)):
+            line = lines[index]
+            width = max(metrics.horizontalAdvance(line), self._scaled_value(96))
+            y = top + index * line_height
+            self.tool_choice_rects.append(
+                QRect(text_rect.left(), y - self._scaled_value(4), width + self._scaled_value(24), line_height + self._scaled_value(8))
+            )
+
+    def _tool_choice_clicked(self, pos: QPoint) -> bool:
+        if not self.pending_tool_action:
+            return False
+        for index, rect in enumerate(self.tool_choice_rects):
+            if rect.adjusted(-8, -6, 20, 6).contains(pos):
+                self.pending_tool_choice_index = index
+                self._update_tool_choice_styles()
+                if index == 0:
+                    self.confirm_pending_tool_action()
+                else:
+                    self.reject_pending_tool_action()
+                return True
+        return False
 
     def inputMethodQuery(self, query):
         cursor_rectangle_query = getattr(Qt, "ImCursorRectangle", Qt.ImMicroFocus)
@@ -436,8 +434,27 @@ class DesktopPet(QLabel):
         event.accept()
 
     def keyPressEvent(self, event) -> None:
+        if self.pending_tool_action and not self.input_mode:
+            if event.key() in (Qt.Key_Up, Qt.Key_Down):
+                self.pending_tool_choice_index = 1 - self.pending_tool_choice_index
+                self._update_tool_choice_styles()
+                event.accept()
+                return
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if self.pending_tool_choice_index == 0:
+                    self.confirm_pending_tool_action()
+                else:
+                    self.reject_pending_tool_action()
+                event.accept()
+                return
+            if event.key() == Qt.Key_Escape:
+                self.reject_pending_tool_action()
+                event.accept()
+                return
         if not self.input_mode:
-            super().keyPressEvent(event)
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self.begin_text_input()
+            event.accept()
             return
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             text = self.input_buffer.strip()
@@ -483,7 +500,9 @@ class DesktopPet(QLabel):
     def _show_pet_response(self, result: PetResponse) -> None:
         if not result.tool_action:
             self.pending_tool_action = None
-            self._hide_tool_choice_buttons()
+            self.pending_tool_choice_index = 0
+            self.pending_tool_prompt_text = ""
+            self.tool_choice_rects = []
         self.latest_response = f"「{wrap_text(result.text)}」"
         self.show_text(self.latest_response, typing=True)
         self.input_buffer = ""
@@ -514,11 +533,13 @@ class DesktopPet(QLabel):
         if len(names) > 4:
             preview_names += f" 等 {len(names)} 个文件"
         self.pending_tool_action = action
-        self.latest_response = f"「{wrap_text(f'{result.text} 将移到废纸篓：{preview_names}。要确认吗？')}」"
-        self.show_text(self.latest_response, typing=True)
+        self.pending_tool_choice_index = 0
+        self.pending_tool_prompt_text = f"{result.text} 将移到废纸篓：{preview_names}。要确认吗？"
+        self._set_pending_tool_display(typing=True)
         self.input_buffer = ""
         self.preedit_text = ""
-        self._show_tool_choice_buttons()
+        self.activateWindow()
+        self.setFocus(Qt.OtherFocusReason)
 
     def confirm_pending_tool_action(self) -> None:
         action = self.pending_tool_action
@@ -526,7 +547,9 @@ class DesktopPet(QLabel):
             self._show_pet_response(PetResponse(text="没有待确认的操作。", emotion="sad"))
             return
         self.pending_tool_action = None
-        self._hide_tool_choice_buttons()
+        self.pending_tool_choice_index = 0
+        self.pending_tool_prompt_text = ""
+        self.tool_choice_rects = []
         self.show_text("【 系统 】\n  正在移到废纸篓...", typing=False)
         self.tool_worker = ToolActionWorker(self.api_client, action)
         self.tool_worker.finished.connect(self.on_tool_action_result)
@@ -534,7 +557,9 @@ class DesktopPet(QLabel):
 
     def reject_pending_tool_action(self) -> None:
         self.pending_tool_action = None
-        self._hide_tool_choice_buttons()
+        self.pending_tool_choice_index = 0
+        self.pending_tool_prompt_text = ""
+        self.tool_choice_rects = []
         self._show_pet_response(PetResponse(text="已拒绝，没有移动任何文件。", emotion="happy"))
 
     def on_tool_action_result(self, result: PetResponse | None, error: str | None) -> None:
