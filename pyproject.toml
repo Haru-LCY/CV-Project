@@ -8,14 +8,40 @@ dependencies = [
     "numpy>=1.26.0",
     "opencv-python==4.11.0.86",
     "Pillow==11.3.0",
-    "mem0ai",
     "pyautogui==0.9.54",
-    "PyQt5==5.15.11",
-    "PyQtWebEngine==5.15.7",
-    "PyQt5_sip==12.17.0",
+
+    # Windows
+    "PyQt5==5.15.10; sys_platform == 'win32'",
+    "PyQtWebEngine==5.15.6; sys_platform == 'win32'",
+    "PyQt5_sip==12.15.0; sys_platform == 'win32'",
+
+    # macOS / Linux
+    "PyQt5==5.15.11; sys_platform != 'win32'",
+    "PyQtWebEngine==5.15.7; sys_platform != 'win32'",
+    "PyQt5_sip==12.17.0; sys_platform != 'win32'",
+
     "requests==2.32.5",
     "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
 ]
 
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.11,<7",
+]
+
+[project.scripts]
+murasame-pet = "scripts.pet_app:main"
+murasame-pet-build = "scripts.build_executable:main"
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'darwin'",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.hatch.build.targets.wheel]
-packages = ["Murasame"]
+packages = ["Murasame", "scripts"]

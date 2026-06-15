@@ -35,7 +35,13 @@ export API_KEY="your_api_key"
 
 ```bash
 uv sync
-uv run python pet.py
+uv run python -m scripts.pet_app
+```
+
+Windows 下也可以直接使用本地 uv 环境运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.pet_app
 ```
 
 首次运行会在 macOS 的 `~/Library/Application Support/MurasamePet/` 下创建或复制运行配置。打包后的 `.app` 也从这个目录读取用户数据：
@@ -49,25 +55,38 @@ uv run python pet.py
 
 首次没有角色卡时，客户端会打开角色生成工作台。选择外貌、性格、身份、画风和称呼后点击“生成预览”，确认后点击“应用角色”，角色卡会保存到 `config.json`，后续对话会按该角色卡的语气回复。
 
-## macOS 打包
+## 打包
 
-本项目提供 `MurasamePet.spec`，用于生成本机可双击运行的 macOS 应用：
-
-```bash
-uv run --with pyinstaller pyinstaller MurasamePet.spec
-```
-
-构建完成后应用位于：
+使用 `scripts.build_executable` 生成当前平台的可执行文件。Windows 会生成 `.exe`，macOS 会生成 `.app`：
 
 ```bash
-dist/MurasamePet.app
+uv sync --extra build
+uv run python -m scripts.build_executable
 ```
 
-打包不会内置 `apikey.md`。如需让 `.app` 调用外部 API，请使用环境变量 `API_KEY`，或把 `apikey.md` 放到：
+Windows 下如果已经同步了 `build` extra，也可以直接使用本地 uv 环境运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.build_executable
+```
+
+默认输出位置：
+
+- macOS: `dist/MurasamePet.app`
+- Windows: `dist/MurasamePet/MurasamePet.exe`
+
+可选参数：
 
 ```bash
-~/Library/Application Support/MurasamePet/apikey.md
+python -m scripts.build_executable --onefile
+python -m scripts.build_executable --console
+python -m scripts.build_executable --dry-run
 ```
+
+打包不会内置 `apikey.md`。如需让打包后的应用调用外部 API，请使用环境变量 `API_KEY`，或把 `apikey.md` 放到应用数据目录：
+
+- macOS: `~/Library/Application Support/MurasamePet/apikey.md`
+- Windows: `%APPDATA%\MurasamePet\apikey.md`
 
 如果启用桌面视觉观察，macOS 可能会在首次运行时请求屏幕录制权限。
 
@@ -153,7 +172,7 @@ dist/MurasamePet.app
 
 ## API 使用
 
-角色生成和对话回复共用 `character_workbench.py` 中的：
+角色生成和对话回复共用 `scripts/workbench/constants.py` 中的：
 
 - `API_BASE_URL`
 - `DESCRIPTION_MODEL`
