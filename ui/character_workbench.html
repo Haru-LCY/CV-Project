@@ -3,56 +3,179 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>角色生成工作台</title>
+  <title>角色生成工坊</title>
   <link rel="stylesheet" href="./character_workbench.css">
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 </head>
 <body>
-  <main class="app-shell">
+  <main class="character-workbench">
     <section class="control-pane">
-      <header class="title-block">
-        <h1>角色生成工作台</h1>
-        <p>选择日常系二次元设定，生成预览后再应用到桌宠。</p>
+      <header class="workbench-hero">
+        <div>
+          <span class="kicker">Soft Anime Studio</span>
+          <h1>角色生成工坊</h1>
+        </div>
+        <p>捏出外貌、调好性格，再生成专属二次元陪伴桌宠。</p>
       </header>
 
-      <div class="history-bar">
-        <label for="historySelect">历史角色</label>
-        <select id="historySelect"></select>
-        <button id="loadHistoryButton" type="button" class="secondary" disabled>加载角色</button>
-      </div>
-
-      <div class="setup-bar">
-        <div class="field-row">
-          <label for="userName">你的称呼</label>
-          <input id="userName" type="text" autocomplete="off">
+      <section class="panel-card basic-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="panel-eyebrow">Basic Info</span>
+            <h2>基础信息</h2>
+          </div>
+          <span class="soft-badge">角色卡来源</span>
         </div>
 
-        <div class="field-row">
-          <label for="styleSelect">画风</label>
-          <select id="styleSelect"></select>
+        <div class="history-bar">
+          <label for="historySelect">历史角色</label>
+          <select id="historySelect"></select>
+          <button id="loadHistoryButton" type="button" class="ghost-button" disabled>加载</button>
         </div>
-      </div>
 
-      <div class="traits-stack">
-        <section class="trait-group appearance-group">
-          <h2>外貌设定</h2>
-          <div id="appearanceTraits" class="chip-list"></div>
-        </section>
+        <div class="setup-grid">
+          <label class="field-card" for="userName">
+            <span>她怎么称呼你</span>
+            <input id="userName" type="text" autocomplete="off">
+          </label>
 
-        <section class="trait-group personality-group">
-          <h2>性格设定</h2>
-          <div id="personalityTraits" class="chip-list"></div>
-        </section>
-      </div>
+          <label class="field-card" for="styleSelect">
+            <span>立绘风格</span>
+            <select id="styleSelect"></select>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel-card appearance-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="panel-eyebrow">Appearance</span>
+            <h2>外貌设定</h2>
+          </div>
+          <span class="soft-badge mint">造型工坊</span>
+        </div>
+        <div id="appearanceSummary" class="appearance-summary">选择发色、瞳色和服装，生成你的专属桌宠。</div>
+        <div id="appearanceTraits" class="appearance-stack"></div>
+      </section>
+
+      <section class="panel-card personality-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="panel-eyebrow">Personality</span>
+            <h2>性格设定</h2>
+          </div>
+          <span class="soft-badge rose">核心性格</span>
+        </div>
+        <div class="personality-section">
+          <h3>核心性格</h3>
+          <div id="personalityCore" class="personality-grid"></div>
+        </div>
+        <div class="personality-section">
+          <h3>可追加性格</h3>
+          <div id="personalityAvailable" class="personality-grid"></div>
+        </div>
+        <div id="personalityTraits" hidden></div>
+      </section>
+
+      <details id="advancedPanel" class="panel-card advanced-panel">
+        <summary>
+          <span>
+            <em>Advanced</em>
+            <strong>高级设定</strong>
+          </span>
+          <b>行为、语言与自定义属性</b>
+        </summary>
+
+        <div class="advanced-content">
+          <section class="advanced-block">
+            <h3>互动行为设定</h3>
+            <div class="option-grid">
+              <label class="field-card">
+                <span>主动打招呼频率</span>
+                <select id="greetingFrequency">
+                  <option value="low">低</option>
+                  <option value="medium" selected>中</option>
+                  <option value="high">高</option>
+                </select>
+              </label>
+              <label class="field-card">
+                <span>学习提醒强度</span>
+                <select id="studyReminder">
+                  <option value="off">关闭</option>
+                  <option value="gentle" selected>温和</option>
+                  <option value="strict">严格</option>
+                </select>
+              </label>
+              <label class="field-card">
+                <span>情绪反馈风格</span>
+                <select id="emotionalFeedback">
+                  <option value="comforting">安慰型</option>
+                  <option value="teasing">吐槽型</option>
+                  <option value="companion" selected>陪伴型</option>
+                  <option value="encouraging">鼓励型</option>
+                </select>
+              </label>
+              <label class="field-card">
+                <span>桌宠存在感</span>
+                <select id="presenceLevel">
+                  <option value="quiet">安静陪伴</option>
+                  <option value="occasional" selected>偶尔互动</option>
+                  <option value="frequent">高频互动</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="advanced-block">
+            <h3>语言风格设定</h3>
+            <div class="option-grid">
+              <label class="field-card">
+                <span>口癖 / catchphrase</span>
+                <input id="catchphrase" type="text" placeholder="例如：今天也要闪闪发光呢">
+              </label>
+              <label class="field-card">
+                <span>称呼用户</span>
+                <input id="userNickname" type="text" placeholder="小春 / 主人 / 前辈">
+              </label>
+              <label class="field-card">
+                <span>句尾风格</span>
+                <input id="sentenceEnding" type="text" placeholder="呢 / 喔 / 哼">
+              </label>
+              <div class="toggle-row">
+                <label class="toggle-card">
+                  <input id="allowRoast" type="checkbox">
+                  <span>允许毒舌吐槽</span>
+                </label>
+                <label class="toggle-card">
+                  <input id="allowAffection" type="checkbox" checked>
+                  <span>允许撒娇</span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="advanced-block custom-attributes-block">
+            <div class="block-title-row">
+              <h3>自定义属性</h3>
+              <button id="addCustomAttributeButton" type="button" class="mint-button">添加自定义属性</button>
+            </div>
+            <div id="customAttributes" class="custom-attributes"></div>
+          </section>
+        </div>
+      </details>
     </section>
 
-    <section class="preview-pane">
-      <div class="preview-frame">
+    <aside class="preview-pane">
+      <section class="preview-stage">
+        <div class="stage-label">Character Stage</div>
         <div class="stage-glow"></div>
-        <div id="imagePlaceholder" class="image-placeholder">还没有生成预览</div>
+        <div id="imagePlaceholder" class="image-placeholder">
+          <strong>还没有角色诞生</strong>
+          <span>选择外貌与性格后，点击生成预览。</span>
+        </div>
         <img id="previewImage" alt="角色预览图" hidden>
         <div class="stage-floor"></div>
-      </div>
+      </section>
 
       <div id="emotionTabs" class="emotion-tabs" aria-label="情感预览">
         <button type="button" class="emotion-tab is-active" data-emotion="happy">开心</button>
@@ -61,27 +184,48 @@
         <button type="button" class="emotion-tab" data-emotion="sad">伤心</button>
       </div>
 
-      <div class="profile-card">
-        <div class="profile-row">
-          <span>角色名</span>
-          <strong id="characterName">-</strong>
+      <section class="profile-card">
+        <div class="profile-card-header">
+          <span>角色资料卡</span>
+          <strong id="characterName">未生成</strong>
         </div>
-        <div class="profile-row">
-          <span>问候语</span>
-          <strong id="characterGreeting">-</strong>
+        <div class="profile-info-grid">
+          <div class="profile-item">
+            <span>对你的称呼</span>
+            <strong id="profileNickname">-</strong>
+          </div>
+          <div class="profile-item">
+            <span>外貌摘要</span>
+            <strong id="profileAppearance">-</strong>
+          </div>
+          <div class="profile-item">
+            <span>性格组合</span>
+            <strong id="profilePersonality">-</strong>
+          </div>
+          <div class="profile-item">
+            <span>自定义属性</span>
+            <strong id="profileCustomAttributes">-</strong>
+          </div>
         </div>
-        <textarea id="characterPersona" readonly placeholder="生成后这里会显示角色人设。"></textarea>
-      </div>
-    </section>
+        <div class="profile-story">
+          <span>初始问候语</span>
+          <p id="characterGreeting">选择设定后，她会在这里准备第一句问候。</p>
+        </div>
+        <div class="profile-story">
+          <span>人设描述</span>
+          <p id="characterPersona">生成后这里会显示完整角色人设。</p>
+        </div>
+      </section>
+    </aside>
   </main>
 
   <footer class="action-bar">
     <p id="statusText">选择外貌和性格后，点击“生成预览”。</p>
     <div class="actions">
-      <button id="generateButton" type="button">生成预览</button>
-      <button id="saveCardButton" type="button" disabled>保存角色卡</button>
-      <button id="applyButton" type="button" disabled>应用角色</button>
-      <button id="cancelButton" type="button" class="secondary">取消</button>
+      <button id="generateButton" type="button" class="primary-action">生成预览</button>
+      <button id="saveCardButton" type="button" class="secondary-action" disabled>保存角色卡</button>
+      <button id="applyButton" type="button" class="apply-action" disabled>应用角色</button>
+      <button id="cancelButton" type="button" class="ghost-button">取消</button>
     </div>
   </footer>
 

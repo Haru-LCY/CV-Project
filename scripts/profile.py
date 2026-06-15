@@ -32,4 +32,6 @@ class CharacterProfile:
     identity_traits: list[str] | None = None
     personality_dimensions: dict[str, int] | None = None
     appearance_style_dimensions: dict[str, int] | None = None
+    advanced_settings: dict | None = None
+    custom_attributes: list[dict] | None = None
     style: str | None = None

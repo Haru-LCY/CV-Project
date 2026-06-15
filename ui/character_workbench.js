@@ -3,12 +3,74 @@ let previewIsCurrent = false;
 let activeEmotion = "happy";
 let emotionImageSources = {};
 let historyCards = [];
+let customAttributes = [];
+let latestProfile = null;
 
 const els = {};
 const EMOTIONS = ["happy", "angry", "shy", "sad"];
 const SINGLE_CHOICE_APPEARANCE_GROUPS = new Set(["发色", "瞳色"]);
 const APPEARANCE_STRENGTH_GROUPS = new Set(["整体风格"]);
 const DEFAULT_PERSONALITY_STRENGTH = 3;
+
+const PERSONALITY_META = {
+  "傲娇系": {
+    description: "嘴硬心软，关心会藏在别扭语气里。",
+    quote: "才不是特意来陪你的，只是顺路而已。",
+  },
+  "三无冷淡系": {
+    description: "安静、克制，回应短但稳定可靠。",
+    quote: "收到。任务已记录。",
+  },
+  "呆萌系": {
+    description: "反应慢半拍，偶尔天然发言。",
+    quote: "咦？刚才那个按钮是会发光的吗？",
+  },
+  "元气少女系": {
+    description: "活力充沛，会主动把气氛点亮。",
+    quote: "今天也一起加油吧！",
+  },
+  "温柔治愈系": {
+    description: "耐心陪伴，擅长安慰与鼓励。",
+    quote: "慢慢来，我会在这里陪着你。",
+  },
+  "毒舌系": {
+    description: "吐槽精准，但不会真的伤害用户。",
+    quote: "这个计划很有勇气，尤其是它还没开始。",
+  },
+  "害羞内向系": {
+    description: "容易脸红，表达关心时很轻声。",
+    quote: "那个……如果你需要的话，我可以陪你。",
+  },
+  "天然系": {
+    description: "直觉行动，带一点不自觉的可爱。",
+    quote: "欸嘿，好像不小心说出真心话了。",
+  },
+  "认真优等生系": {
+    description: "自律、有条理，会帮你整理任务。",
+    quote: "先完成最重要的一项，再休息五分钟。",
+  },
+  "慵懒系": {
+    description: "语气放松，陪伴感轻柔不压迫。",
+    quote: "再努力一点点，然后就可以躺平啦。",
+  },
+};
+
+const STYLE_DESCRIPTIONS = {
+  "清纯": "干净柔和，适合邻家感与日常陪伴。",
+  "可爱": "圆润甜美，突出亲近感和俏皮表情。",
+  "冷淡": "低调清爽，表情克制、气质安静。",
+  "优雅": "线条细腻，姿态端正，有精致感。",
+  "活泼": "动作轻快，色彩更明亮，元气感更强。",
+};
+
+const ATTRIBUTE_CATEGORIES = {
+  personality: "性格",
+  behavior: "行为",
+  language: "语言",
+  boundary: "边界",
+  worldview: "世界观",
+  other: "其他",
+};
 
 document.addEventListener("DOMContentLoaded", () => {
   for (const id of [
@@ -17,11 +79,30 @@ document.addEventListener("DOMContentLoaded", () => {
     "loadHistoryButton",
     "styleSelect",
     "appearanceTraits",
+    "appearanceSummary",
     "personalityTraits",
+    "personalityCore",
+    "personalityAvailable",
+    "advancedPanel",
+    "greetingFrequency",
+    "studyReminder",
+    "emotionalFeedback",
+    "presenceLevel",
+    "catchphrase",
+    "userNickname",
+    "sentenceEnding",
+    "allowRoast",
+    "allowAffection",
+    "addCustomAttributeButton",
+    "customAttributes",
     "imagePlaceholder",
     "previewImage",
     "emotionTabs",
     "characterName",
+    "profileNickname",
+    "profileAppearance",
+    "profilePersonality",
+    "profileCustomAttributes",
     "characterGreeting",
     "characterPersona",
     "statusText",
@@ -45,31 +126,34 @@ document.addEventListener("DOMContentLoaded", () => {
 function connectBridgeSignals() {
   bridge.generationStarted.connect(() => {
     setBusy(true);
+    latestProfile = null;
     previewIsCurrent = false;
     els.applyButton.disabled = true;
     els.saveCardButton.disabled = true;
     els.statusText.textContent = "正在生成人设和四张情感预览图...";
-    showPlaceholder("生成中...");
+    showPlaceholder("生成中...", "正在把设定整理成角色立绘。");
     resetEmotionPreview();
-    els.characterName.textContent = "-";
-    els.characterGreeting.textContent = "-";
-    els.characterPersona.value = "";
+    renderProfileCard(null);
   });
 
   bridge.generationFinished.connect((rawProfile) => {
     setBusy(false);
     const profile = JSON.parse(rawProfile);
+    latestProfile = profile;
+    if (Array.isArray(profile.custom_attributes)) {
+      customAttributes = normalizeCustomAttributes(profile.custom_attributes);
+      renderCustomAttributes();
+    }
+    applyAdvancedSettings(profile.advanced_settings);
     previewIsCurrent = true;
     els.applyButton.disabled = false;
     els.saveCardButton.disabled = false;
     els.statusText.textContent = "预览已生成，满意后点击“应用角色”。";
-    els.characterName.textContent = profile.name || "-";
-    els.characterGreeting.textContent = profile.greeting || "-";
-    els.characterPersona.value = profile.persona || "";
+    renderProfileCard(profile);
     emotionImageSources = normalizeEmotionImages(profile);
     renderEmotionAvailability();
     if (!showEmotion(activeEmotion)) {
-      showPlaceholder("没有可用预览图");
+      showPlaceholder("没有可用预览图", "可以先保存角色卡，或重新生成一次。");
     }
   });
 
@@ -80,7 +164,7 @@ function connectBridgeSignals() {
     els.saveCardButton.disabled = true;
     els.statusText.textContent = `生成失败：${message || "unknown error"}`;
     if (!els.previewImage.src) {
-      showPlaceholder("生成失败");
+      showPlaceholder("生成失败", "请检查网络或 API key 后再试一次。");
     }
   });
 
@@ -89,6 +173,7 @@ function connectBridgeSignals() {
     els.applyButton.disabled = true;
     els.saveCardButton.disabled = true;
     els.statusText.textContent = "选择已修改，请重新生成预览。";
+    renderProfileCard(latestProfile);
   });
 
   bridge.cardSaved.connect((path) => {
@@ -117,18 +202,35 @@ function renderInitialState(state) {
     defaults.appearance_traits || [],
     defaults.appearance_style_dimensions || {},
   );
-  renderTraitControls(
-    els.personalityTraits,
+  renderPersonalityPanel(
     options.personality_traits || [],
     defaults.personality_traits || [],
     defaults.personality_dimensions || {},
-    "强度",
   );
+  applyAdvancedSettings(defaults.advanced_settings);
+  customAttributes = normalizeCustomAttributes(defaults.custom_attributes || defaults.customAttributes || []);
+  renderCustomAttributes();
+  renderAppearanceSummary();
+  renderProfileCard(null);
 
-  els.userName.addEventListener("input", markStale);
-  els.styleSelect.addEventListener("change", markStale);
-  bindTraitControlEvents();
+  els.userName.addEventListener("input", handleFormChange);
+  els.styleSelect.addEventListener("change", handleFormChange);
+  for (const id of [
+    "greetingFrequency",
+    "studyReminder",
+    "emotionalFeedback",
+    "presenceLevel",
+    "catchphrase",
+    "userNickname",
+    "sentenceEnding",
+    "allowRoast",
+    "allowAffection",
+  ]) {
+    els[id].addEventListener("input", handleFormChange);
+    els[id].addEventListener("change", handleFormChange);
+  }
 
+  els.addCustomAttributeButton.addEventListener("click", addCustomAttribute);
   els.generateButton.addEventListener("click", startGeneration);
   els.loadHistoryButton.addEventListener("click", loadSelectedHistory);
   els.saveCardButton.addEventListener("click", () => bridge.saveCharacterCard());
@@ -175,10 +277,19 @@ function renderStyleSelect(styles, defaultStyle) {
   for (const style of styles) {
     const option = document.createElement("option");
     option.value = style;
-    option.textContent = style;
+    option.textContent = styleLabel(style);
     option.selected = style === defaultStyle;
     els.styleSelect.appendChild(option);
   }
+}
+
+function styleLabel(style) {
+  const labels = {
+    anime_desktop_pet: "二次元桌宠",
+    transparent_png: "透明 PNG",
+    live2d_like: "Live2D 感",
+  };
+  return labels[style] || style;
 }
 
 function renderAppearanceGroups(container, groups, fallbackValues, defaults, styleDimensions) {
@@ -189,34 +300,36 @@ function renderAppearanceGroups(container, groups, fallbackValues, defaults, sty
   for (const [groupName, values] of normalizedGroups) {
     const isSingleChoice = SINGLE_CHOICE_APPEARANCE_GROUPS.has(groupName);
     const usesStrength = APPEARANCE_STRENGTH_GROUPS.has(groupName);
-    const details = document.createElement("details");
-    details.className = "appearance-folder";
-    details.classList.toggle("is-single-choice", isSingleChoice);
-    details.classList.toggle("uses-strength", usesStrength);
-    details.open = groupIndex < 2 || values.some((value) => selected.has(value));
+    const section = document.createElement("section");
+    section.className = "appearance-section";
+    section.dataset.groupName = groupName;
 
-    const summary = document.createElement("summary");
-    const title = document.createElement("span");
+    const header = document.createElement("div");
+    header.className = "appearance-section-header";
+    const title = document.createElement("div");
+    title.className = "appearance-section-title";
     title.textContent = groupName;
-    const count = document.createElement("em");
-    count.textContent = usesStrength ? "可调" : isSingleChoice ? "单选" : `${values.length} 项`;
-    summary.append(title, count);
-    details.appendChild(summary);
+    const meta = document.createElement("div");
+    meta.className = "appearance-section-meta";
+    meta.textContent = usesStrength ? `${values.length} 种风格` : isSingleChoice ? "单选" : `${values.length} 项`;
+    header.append(title, meta);
+    section.appendChild(header);
 
     const list = document.createElement("div");
-    list.className = "chip-list nested";
+    list.className = "chip-list";
     if (usesStrength) {
-      renderTraitControls(list, values, defaults, styleDimensions, "倾向");
+      renderStyleDimensionCards(list, values, defaults, styleDimensions);
     } else {
       renderChipItems(list, values, selected, {
         inputType: isSingleChoice ? "radio" : "checkbox",
         name: `appearance-${groupIndex}`,
       });
     }
-    details.appendChild(list);
-    container.appendChild(details);
+    section.appendChild(list);
+    container.appendChild(section);
     groupIndex += 1;
   }
+  bindAppearanceEvents();
 }
 
 function normalizeAppearanceGroups(groups, fallbackValues) {
@@ -231,18 +344,11 @@ function normalizeAppearanceGroups(groups, fallbackValues) {
   return [["外貌", fallbackValues || []]];
 }
 
-function renderChips(container, values, defaults) {
-  container.innerHTML = "";
-  const selected = new Set(defaults);
-  renderChipItems(container, values, selected);
-}
-
 function renderChipItems(container, values, selected, options = {}) {
   const inputType = options.inputType || "checkbox";
   for (const value of values) {
     const label = document.createElement("label");
     label.className = "chip";
-    label.classList.toggle("is-radio", inputType === "radio");
     const input = document.createElement("input");
     input.type = inputType;
     if (options.name) {
@@ -257,8 +363,7 @@ function renderChipItems(container, values, selected, options = {}) {
   }
 }
 
-function renderTraitControls(container, values, defaults, dimensions = {}, strengthLabelText = "强度") {
-  container.innerHTML = "";
+function renderStyleDimensionCards(container, values, defaults, dimensions = {}) {
   const selected = new Set(defaults.map(baseTraitName));
   const strengths = new Map(defaults.map((value) => [baseTraitName(value), traitStrength(value)]));
   for (const [trait, strength] of Object.entries(normalizeTraitDimensions(dimensions))) {
@@ -266,8 +371,9 @@ function renderTraitControls(container, values, defaults, dimensions = {}, stren
   }
 
   for (const value of values) {
-    const item = document.createElement("label");
-    item.className = "trait-control";
+    const label = document.createElement("label");
+    label.className = "style-card trait-control";
+    label.classList.toggle("is-selected", selected.has(value));
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -275,20 +381,19 @@ function renderTraitControls(container, values, defaults, dimensions = {}, stren
     checkbox.value = value;
     checkbox.checked = selected.has(value);
 
-    const body = document.createElement("span");
-    body.className = "trait-body";
+    const head = document.createElement("span");
+    head.className = "style-card-head";
 
     const name = document.createElement("span");
-    name.className = "trait-name";
+    name.className = "style-name";
     name.textContent = value;
 
-    const strengthWrap = document.createElement("span");
-    strengthWrap.className = "trait-strength";
+    const desc = document.createElement("p");
+    desc.className = "style-desc";
+    desc.textContent = STYLE_DESCRIPTIONS[value] || "影响整体气质和画面取向。";
 
-    const strengthLabel = document.createElement("span");
-    strengthLabel.className = "strength-label";
-    strengthLabel.textContent = strengthLabelText;
-
+    const strength = document.createElement("span");
+    strength.className = "style-strength";
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "1";
@@ -296,24 +401,134 @@ function renderTraitControls(container, values, defaults, dimensions = {}, stren
     slider.step = "1";
     slider.value = String(strengths.get(value) || DEFAULT_PERSONALITY_STRENGTH);
     slider.disabled = !checkbox.checked;
-
     const output = document.createElement("output");
-    output.textContent = slider.value;
-
+    output.textContent = `Lv.${slider.value}`;
     slider.addEventListener("input", () => {
-      output.textContent = slider.value;
+      output.textContent = `Lv.${slider.value}`;
     });
+    strength.append(slider, output);
+
     checkbox.addEventListener("change", () => {
       slider.disabled = !checkbox.checked;
-      item.classList.toggle("is-selected", checkbox.checked);
+      label.classList.toggle("is-selected", checkbox.checked);
+      handleFormChange();
     });
-
-    item.classList.toggle("is-selected", checkbox.checked);
-    strengthWrap.append(strengthLabel, slider, output);
-    body.append(name, strengthWrap);
-    item.append(checkbox, body);
-    container.appendChild(item);
+    slider.addEventListener("change", handleFormChange);
+    head.append(checkbox, name);
+    label.append(head, desc, strength);
+    container.appendChild(label);
   }
+}
+
+function renderPersonalityPanel(values, defaults, dimensions = {}) {
+  els.personalityTraits.innerHTML = "";
+  els.personalityCore.innerHTML = "";
+  els.personalityAvailable.innerHTML = "";
+  const selected = new Set(defaults.map(baseTraitName));
+  const strengths = new Map(defaults.map((value) => [baseTraitName(value), traitStrength(value)]));
+  for (const [trait, strength] of Object.entries(normalizeTraitDimensions(dimensions))) {
+    strengths.set(trait, strength);
+  }
+
+  for (const value of values) {
+    const card = createPersonalityCard(value, selected.has(value), strengths.get(value) || DEFAULT_PERSONALITY_STRENGTH);
+    els.personalityTraits.appendChild(card);
+  }
+  rebuildPersonalitySections();
+}
+
+function createPersonalityCard(value, checked, strength) {
+  const label = document.createElement("label");
+  label.className = "trait-control";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.className = "trait-toggle";
+  checkbox.value = value;
+  checkbox.checked = checked;
+
+  const body = document.createElement("span");
+  body.className = "trait-body";
+
+  const name = document.createElement("span");
+  name.className = "trait-name";
+  name.textContent = value;
+
+  const meta = PERSONALITY_META[value] || {
+    description: "影响她与用户相处时最常出现的语气。",
+    quote: "我会按照这个性格陪在你身边。",
+  };
+  const description = document.createElement("p");
+  description.className = "trait-description";
+  description.textContent = meta.description;
+  const quote = document.createElement("p");
+  quote.className = "trait-quote";
+  quote.textContent = `“${meta.quote}”`;
+
+  const strengthWrap = document.createElement("span");
+  strengthWrap.className = "trait-strength";
+  const strengthLabel = document.createElement("span");
+  strengthLabel.className = "strength-label";
+  strengthLabel.textContent = "强度";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "1";
+  slider.max = "5";
+  slider.step = "1";
+  slider.value = String(strength);
+  slider.disabled = !checked;
+  const output = document.createElement("output");
+  output.textContent = `Lv.${slider.value}`;
+
+  slider.addEventListener("input", () => {
+    output.textContent = `Lv.${slider.value}`;
+    renderProfileCard(latestProfile);
+  });
+  slider.addEventListener("change", handleFormChange);
+  checkbox.addEventListener("change", () => {
+    slider.disabled = !checkbox.checked;
+    label.classList.toggle("is-selected", checkbox.checked);
+    rebuildPersonalitySections();
+    handleFormChange();
+  });
+
+  strengthWrap.append(strengthLabel, slider, output);
+  body.append(name, description, quote, strengthWrap);
+  label.append(checkbox, body);
+  label.classList.toggle("is-selected", checked);
+  return label;
+}
+
+function rebuildPersonalitySections() {
+  let coreCount = 0;
+  let availableCount = 0;
+  for (const card of Array.from(els.personalityTraits.querySelectorAll(".trait-control"))) {
+    const checkbox = card.querySelector(".trait-toggle");
+    card.classList.toggle("is-selected", checkbox.checked);
+    if (checkbox.checked) {
+      els.personalityCore.appendChild(card);
+      coreCount += 1;
+    } else {
+      els.personalityAvailable.appendChild(card);
+      availableCount += 1;
+    }
+  }
+  ensureEmptyPersonalityState(els.personalityCore, coreCount, "还没有核心性格，先从下方追加一个吧。");
+  ensureEmptyPersonalityState(els.personalityAvailable, availableCount, "可追加性格已全部启用。");
+}
+
+function ensureEmptyPersonalityState(container, count, text) {
+  const old = container.querySelector(".personality-empty");
+  if (old) {
+    old.remove();
+  }
+  if (count > 0) {
+    return;
+  }
+  const empty = document.createElement("div");
+  empty.className = "personality-empty";
+  empty.textContent = text;
+  container.appendChild(empty);
 }
 
 function baseTraitName(value) {
@@ -357,7 +572,8 @@ function selectedValues(container) {
 }
 
 function selectedPersonalityValues(container) {
-  return Array.from(container.querySelectorAll(".trait-control")).flatMap((item) => {
+  const scope = container === els.personalityTraits ? document.querySelector(".personality-panel") : container;
+  return Array.from(scope.querySelectorAll(".trait-control")).flatMap((item) => {
     const checkbox = item.querySelector(".trait-toggle");
     if (!checkbox || !checkbox.checked) {
       return [];
@@ -367,18 +583,21 @@ function selectedPersonalityValues(container) {
 }
 
 function selectedTraitDimensions(container) {
-  return Array.from(container.querySelectorAll(".trait-control")).flatMap((item) => {
+  const scope = container === els.personalityTraits ? document.querySelector(".personality-panel") : container;
+  return Array.from(scope.querySelectorAll(".trait-control")).flatMap((item) => {
     const checkbox = item.querySelector(".trait-toggle");
     if (!checkbox || !checkbox.checked) {
       return [];
     }
-    const slider = item.querySelector(".trait-strength input");
+    const slider = item.querySelector("input[type='range']");
     const strength = slider ? clampStrength(slider.value) : DEFAULT_PERSONALITY_STRENGTH;
     return [[baseTraitName(checkbox.value), strength]];
   });
 }
 
 function startGeneration() {
+  const attrs = collectCustomAttributes();
+  const advancedSettings = collectAdvancedSettings();
   const payload = {
     user_name: els.userName.value.trim() || "用户",
     appearance_traits: selectedValues(els.appearanceTraits),
@@ -388,9 +607,19 @@ function startGeneration() {
     appearance_style_dimensions: Object.fromEntries(
       selectedTraitDimensions(els.appearanceTraits).filter(([trait]) => APPEARANCE_STRENGTH_GROUPS.size && trait),
     ),
+    advanced_settings: advancedSettings,
+    customAttributes: attrs,
+    custom_attributes: attrs,
     style: els.styleSelect.value,
   };
   bridge.startGeneration(JSON.stringify(payload));
+}
+
+function handleFormChange() {
+  collectCustomAttributes();
+  renderAppearanceSummary();
+  renderProfileCard(latestProfile);
+  markStale();
 }
 
 function markStale() {
@@ -424,7 +653,7 @@ function setActiveEmotion(emotion) {
   activeEmotion = emotion;
   renderEmotionAvailability();
   if (!showEmotion(emotion)) {
-    showPlaceholder("这个情感还没有预览图");
+    showPlaceholder("这个情感还没有预览图", "生成完成后如果缺图，会用开心图作为主要预览。");
   }
 }
 
@@ -436,7 +665,7 @@ function showEmotion(emotion) {
   els.previewImage.src = src;
   els.previewImage.hidden = false;
   els.imagePlaceholder.hidden = true;
-  els.imagePlaceholder.textContent = "";
+  els.imagePlaceholder.innerHTML = "";
   return true;
 }
 
@@ -457,35 +686,274 @@ function resetEmotionPreview() {
 function setBusy(isBusy) {
   els.generateButton.disabled = isBusy;
   els.saveCardButton.disabled = isBusy || !previewIsCurrent;
+  els.applyButton.disabled = isBusy || !previewIsCurrent;
   els.cancelButton.disabled = isBusy;
-  els.userName.disabled = isBusy;
-  els.styleSelect.disabled = isBusy;
-  document.querySelectorAll(".chip input, .trait-control input").forEach((input) => {
-    input.disabled = isBusy;
-  });
+  document
+    .querySelectorAll(
+      "input, select, textarea, .chip input, .trait-control input, #addCustomAttributeButton, .custom-attribute-card button",
+    )
+    .forEach((input) => {
+      input.disabled = isBusy;
+    });
   if (!isBusy) {
     document.querySelectorAll(".trait-control").forEach((item) => {
       const checkbox = item.querySelector(".trait-toggle");
-      const slider = item.querySelector(".trait-strength input");
+      const slider = item.querySelector("input[type='range']");
       if (checkbox && slider) {
         slider.disabled = !checkbox.checked;
       }
     });
+    renderHistoryCards(historyCards);
+    els.userName.disabled = false;
+    els.styleSelect.disabled = false;
+    els.addCustomAttributeButton.disabled = false;
+    renderCustomAttributes();
   }
 }
 
-function showPlaceholder(text) {
+function showPlaceholder(title, detail = "") {
   els.previewImage.hidden = true;
   els.previewImage.removeAttribute("src");
   els.imagePlaceholder.hidden = false;
-  els.imagePlaceholder.textContent = text;
+  els.imagePlaceholder.innerHTML = "";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const span = document.createElement("span");
+  span.textContent = detail || "选择外貌与性格后，点击生成预览。";
+  els.imagePlaceholder.append(strong, span);
 }
 
-function bindTraitControlEvents() {
-  document.querySelectorAll(".chip input, .trait-toggle").forEach((input) => {
-    input.addEventListener("change", markStale);
+function bindAppearanceEvents() {
+  document.querySelectorAll("#appearanceTraits .chip input").forEach((input) => {
+    input.addEventListener("change", handleFormChange);
   });
-  document.querySelectorAll(".trait-strength input").forEach((input) => {
-    input.addEventListener("change", markStale);
+}
+
+function renderAppearanceSummary() {
+  const values = selectedValues(els.appearanceTraits);
+  if (!values.length) {
+    els.appearanceSummary.textContent = "选择发色、瞳色和服装，生成你的专属桌宠。";
+    return;
+  }
+  els.appearanceSummary.textContent = values.slice(0, 7).join(" · ");
+}
+
+function renderProfileCard(profile) {
+  const appearance = selectedValues(els.appearanceTraits);
+  const personalityDimensions = Object.fromEntries(selectedTraitDimensions(els.personalityTraits));
+  const personality = selectedPersonalityValues(els.personalityTraits).map((trait) => {
+    const level = personalityDimensions[trait] || DEFAULT_PERSONALITY_STRENGTH;
+    return `${trait.replace(/系$/, "")} Lv.${level}`;
   });
+  const attrs = collectCustomAttributes().filter((item) => item.enabled && item.name.trim());
+  const nickname = els.userNickname.value.trim() || els.userName.value.trim() || "用户";
+
+  els.characterName.textContent = profile?.name || "未生成";
+  els.profileNickname.textContent = nickname || "-";
+  els.profileAppearance.textContent = appearance.length ? appearance.slice(0, 8).join(" · ") : "等待选择外貌";
+  els.profilePersonality.textContent = personality.length ? personality.join(" / ") : "等待选择性格";
+  els.profileCustomAttributes.textContent = attrs.length
+    ? attrs.map((item) => `${item.name} Lv.${item.intensity}`).join(" / ")
+    : "暂无自定义属性";
+  els.characterGreeting.textContent = profile?.greeting || "选择设定后，她会在这里准备第一句问候。";
+  els.characterPersona.textContent = profile?.persona || "生成后这里会显示完整角色人设。";
+}
+
+function collectAdvancedSettings() {
+  return {
+    behavior: {
+      greetingFrequency: els.greetingFrequency.value,
+      studyReminder: els.studyReminder.value,
+      emotionalFeedback: els.emotionalFeedback.value,
+      presenceLevel: els.presenceLevel.value,
+    },
+    language: {
+      catchphrase: els.catchphrase.value.trim(),
+      userNickname: els.userNickname.value.trim(),
+      sentenceEnding: els.sentenceEnding.value.trim(),
+      allowRoast: els.allowRoast.checked,
+      allowAffection: els.allowAffection.checked,
+    },
+  };
+}
+
+function applyAdvancedSettings(settings) {
+  if (!settings || typeof settings !== "object") {
+    return;
+  }
+  const behavior = settings.behavior || {};
+  const language = settings.language || {};
+  setSelectValue(els.greetingFrequency, behavior.greetingFrequency);
+  setSelectValue(els.studyReminder, behavior.studyReminder);
+  setSelectValue(els.emotionalFeedback, behavior.emotionalFeedback);
+  setSelectValue(els.presenceLevel, behavior.presenceLevel);
+  els.catchphrase.value = language.catchphrase || "";
+  els.userNickname.value = language.userNickname || "";
+  els.sentenceEnding.value = language.sentenceEnding || "";
+  if (typeof language.allowRoast === "boolean") {
+    els.allowRoast.checked = language.allowRoast;
+  }
+  if (typeof language.allowAffection === "boolean") {
+    els.allowAffection.checked = language.allowAffection;
+  }
+}
+
+function setSelectValue(select, value) {
+  if (!value) {
+    return;
+  }
+  if (Array.from(select.options).some((option) => option.value === value)) {
+    select.value = value;
+  }
+}
+
+function normalizeCustomAttributes(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.map((item) => ({
+    id: String(item.id || cryptoRandomId()),
+    name: String(item.name || ""),
+    category: ATTRIBUTE_CATEGORIES[item.category] ? item.category : "other",
+    intensity: clampStrength(item.intensity),
+    description: String(item.description || ""),
+    enabled: item.enabled !== false,
+  }));
+}
+
+function addCustomAttribute() {
+  customAttributes.push({
+    id: cryptoRandomId(),
+    name: "",
+    category: "personality",
+    intensity: 3,
+    description: "",
+    enabled: true,
+  });
+  renderCustomAttributes();
+  handleFormChange();
+}
+
+function renderCustomAttributes() {
+  els.customAttributes.innerHTML = "";
+  if (!customAttributes.length) {
+    const empty = document.createElement("div");
+    empty.className = "personality-empty";
+    empty.textContent = "还没有自定义属性，可以添加占有欲、边界感、世界观等更细的设定。";
+    els.customAttributes.appendChild(empty);
+    return;
+  }
+  for (const attribute of customAttributes) {
+    els.customAttributes.appendChild(createCustomAttributeCard(attribute));
+  }
+}
+
+function createCustomAttributeCard(attribute) {
+  const card = document.createElement("article");
+  card.className = "custom-attribute-card";
+  card.classList.toggle("is-disabled", !attribute.enabled);
+  card.dataset.id = attribute.id;
+
+  const head = document.createElement("div");
+  head.className = "custom-attribute-head";
+
+  const name = document.createElement("input");
+  name.type = "text";
+  name.placeholder = "属性名，例如：占有欲";
+  name.value = attribute.name;
+
+  const category = document.createElement("select");
+  for (const [value, label] of Object.entries(ATTRIBUTE_CATEGORIES)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === attribute.category;
+    category.appendChild(option);
+  }
+
+  const enabledLabel = document.createElement("label");
+  enabledLabel.className = "toggle-card";
+  const enabled = document.createElement("input");
+  enabled.type = "checkbox";
+  enabled.checked = attribute.enabled;
+  const enabledText = document.createElement("span");
+  enabledText.textContent = "启用";
+  enabledLabel.append(enabled, enabledText);
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "icon-button";
+  remove.title = "删除属性";
+  remove.textContent = "×";
+
+  head.append(name, category, enabledLabel, remove);
+
+  const strength = document.createElement("label");
+  strength.className = "attribute-strength";
+  const strengthText = document.createElement("span");
+  strengthText.textContent = "强度";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "1";
+  slider.max = "5";
+  slider.step = "1";
+  slider.value = String(attribute.intensity);
+  const output = document.createElement("output");
+  output.textContent = `Lv.${slider.value}`;
+  strength.append(strengthText, slider, output);
+
+  const description = document.createElement("textarea");
+  description.placeholder = "描述这个属性如何影响角色，例如：会轻微吃醋，但不会过度冒犯用户。";
+  description.value = attribute.description;
+
+  name.addEventListener("input", () => {
+    attribute.name = name.value;
+    handleFormChange();
+  });
+  category.addEventListener("change", () => {
+    attribute.category = category.value;
+    handleFormChange();
+  });
+  enabled.addEventListener("change", () => {
+    attribute.enabled = enabled.checked;
+    card.classList.toggle("is-disabled", !attribute.enabled);
+    handleFormChange();
+  });
+  slider.addEventListener("input", () => {
+    attribute.intensity = clampStrength(slider.value);
+    output.textContent = `Lv.${attribute.intensity}`;
+    renderProfileCard(latestProfile);
+  });
+  slider.addEventListener("change", handleFormChange);
+  description.addEventListener("input", () => {
+    attribute.description = description.value;
+    handleFormChange();
+  });
+  remove.addEventListener("click", () => {
+    customAttributes = customAttributes.filter((item) => item.id !== attribute.id);
+    renderCustomAttributes();
+    handleFormChange();
+  });
+
+  card.append(head, strength, description);
+  return card;
+}
+
+function collectCustomAttributes() {
+  customAttributes = customAttributes.map((item) => ({
+    id: String(item.id || cryptoRandomId()),
+    name: String(item.name || ""),
+    category: ATTRIBUTE_CATEGORIES[item.category] ? item.category : "other",
+    intensity: clampStrength(item.intensity),
+    description: String(item.description || ""),
+    enabled: item.enabled !== false,
+  }));
+  return customAttributes;
+}
+
+function cryptoRandomId() {
+  if (window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `attr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
