@@ -21,9 +21,12 @@ from scripts.pet_workers import ScreenWorker
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_windows_app_id()
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
     app = QApplication(sys.argv if argv is None else argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName("MurasamePet")
+    app.setWindowIcon(QIcon(str(resource_path("icon.png"))))
 
     api_client = PetApiClient()
     desktop_pet = DesktopPet(api_client, load_initial_character(api_client))
@@ -71,6 +74,17 @@ def main(argv: list[str] | None = None) -> int:
         app.aboutToQuit.connect(screen_worker.stop)
 
     return app.exec_()
+
+
+def configure_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MurasamePet.Client")
+    except Exception as exc:
+        print(f"Failed to set Windows AppUserModelID: {type(exc).__name__}: {exc}")
 
 
 if __name__ == "__main__":

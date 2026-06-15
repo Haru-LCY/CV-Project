@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import textwrap
 
 from PyQt5.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt, pyqtSignal
@@ -65,8 +66,11 @@ class DesktopPet(QLabel):
         self.text_x_offset_default = int(preset.get("text_x_offset", 140))
         self.text_y_offset_default = int(preset.get("text_y_offset", 20))
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        window_type = Qt.Window if sys.platform == "win32" else Qt.Tool
+        self.setWindowFlags(Qt.FramelessWindowHint | window_type | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_InputMethodEnabled, True)
+        self.setFocusPolicy(Qt.StrongFocus)
 
         self.text_font = QFont()
         self.text_font.setFamily("思源黑体 CN Bold")
@@ -96,7 +100,6 @@ class DesktopPet(QLabel):
         self.top_layer_timer = QTimer()
         self.top_layer_timer.timeout.connect(self.ensure_top_layer)
         self.top_layer_timer.start(3000)
-        self.setAttribute(Qt.WA_InputMethodEnabled, True)
         self.mousePressEvent = self.start_move
         self.mouseMoveEvent = self.on_move
         avatar_url, avatar_base64 = avatar_values_for_emotion(character, "happy")
@@ -121,6 +124,7 @@ class DesktopPet(QLabel):
     def _create_control_button(self, tooltip: str) -> QToolButton:
         button = QToolButton(self)
         button.setFixedSize(self.settings_button_size, self.settings_button_size)
+        button.setFocusPolicy(Qt.NoFocus)
         button.setToolTip(tooltip)
         button.setCursor(Qt.PointingHandCursor)
         button.setStyleSheet(
@@ -301,13 +305,21 @@ class DesktopPet(QLabel):
                 self.head_press_x = event.x()
                 self.setCursor(Qt.OpenHandCursor)
             elif event.y() > int(visible_height * 0.7) or self._text_clicked(event.pos()):
-                self.input_mode = True
-                self.input_buffer = ""
-                self.display_text = f"【 {self.api_client.user_name} 】\n  ..."
-                self.update()
+                self.begin_text_input()
         if event.button() == Qt.MiddleButton:
             self.offset = event.pos()
             self.setCursor(Qt.SizeAllCursor)
+
+    def begin_text_input(self) -> None:
+        self.typing_timer.stop()
+        self.input_mode = True
+        self.input_buffer = ""
+        self.preedit_text = ""
+        self.display_text = f"【 {self.api_client.user_name} 】\n  ..."
+        self.activateWindow()
+        self.setFocus(Qt.MouseFocusReason)
+        self.updateMicroFocus()
+        self.update()
 
     def _text_clicked(self, pos) -> bool:
         if not self.display_text:
@@ -392,14 +404,23 @@ class DesktopPet(QLabel):
         painter.end()
 
     def inputMethodQuery(self, query):
-        if query == Qt.ImMicroFocus:
+        cursor_rectangle_query = getattr(Qt, "ImCursorRectangle", Qt.ImMicroFocus)
+        if query in (Qt.ImMicroFocus, cursor_rectangle_query):
             rect = self.rect().adjusted(
                 self.text_x_offset,
                 self.text_y_offset,
                 self.text_x_offset,
                 -self.rect().height() // 2 + self.text_y_offset,
             )
-            return QRect(self.mapToGlobal(rect.bottomLeft()), QSize(1, 30))
+            return QRect(rect.bottomLeft(), QSize(1, 30))
+        if query == Qt.ImEnabled:
+            return self.input_mode
+        if query == Qt.ImCursorPosition:
+            return len(self.input_buffer)
+        if query == Qt.ImSurroundingText:
+            return self.input_buffer
+        if query == Qt.ImCurrentSelection:
+            return ""
         return super().inputMethodQuery(query)
 
     def inputMethodEvent(self, event) -> None:
@@ -410,7 +431,9 @@ class DesktopPet(QLabel):
             self.input_buffer += event.commitString()
         self.preedit_text = event.preeditString()
         self.display_text = f"【 {self.api_client.user_name} 】\n  「{wrap_text(self.input_buffer + self.preedit_text)}」"
+        self.updateMicroFocus()
         self.update()
+        event.accept()
 
     def keyPressEvent(self, event) -> None:
         if not self.input_mode:
@@ -419,19 +442,24 @@ class DesktopPet(QLabel):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             text = self.input_buffer.strip()
             self.input_mode = False
+            self.preedit_text = ""
+            self.clearFocus()
             if text:
                 self.start_api_worker("user_text", text)
+            event.accept()
             return
         if event.key() == Qt.Key_Backspace and not self.preedit_text:
             self.input_buffer = self.input_buffer[:-1]
-        elif event.text() and not self.preedit_text:
+        elif event.text() and not self.preedit_text and not (event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)):
             self.input_buffer += event.text()
         wrapped = wrap_text(self.input_buffer)
         if not wrapped.strip():
             self.display_text = f"【 {self.api_client.user_name} 】\n  ..."
         else:
             self.display_text = f"【 {self.api_client.user_name} 】\n  「{wrapped}」"
+        self.updateMicroFocus()
         self.update()
+        event.accept()
 
     def start_api_worker(self, event: str, text: str, screenshot_base64: str | None = None) -> None:
         if self.llm_worker and self.llm_worker.isRunning():
