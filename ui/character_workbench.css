@@ -249,7 +249,7 @@ textarea:focus {
 
 .history-bar {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;

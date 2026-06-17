@@ -5,6 +5,7 @@ import traceback
 from typing import Any
 
 from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtWidgets import QFileDialog
 
 from scripts.character_traits import clean_traits, dimensions_from_legacy_traits, normalize_dimensions
 from scripts.workbench.cards import CharacterCardRepository
@@ -19,6 +20,8 @@ class CharacterWorkbenchBridge(QObject):
     previewStale = pyqtSignal()
     cardSaved = pyqtSignal(str)
     cardSaveFailed = pyqtSignal(str)
+    cardImported = pyqtSignal(str)
+    cardImportFailed = pyqtSignal(str)
 
     def __init__(
         self,
@@ -147,6 +150,28 @@ class CharacterWorkbenchBridge(QObject):
         except Exception as exc:
             traceback.print_exc()
             self.generationFailed.emit(f"加载历史角色失败：{type(exc).__name__}: {exc}")
+
+    @pyqtSlot()
+    def importExternalCard(self) -> None:
+        try:
+            selected_path, _ = QFileDialog.getOpenFileName(
+                self.dialog,
+                "导入外部角色",
+                str(self.card_repository.cards_dir()),
+                "角色卡 JSON (*.json);;所有文件 (*)",
+            )
+            if not selected_path:
+                return
+            imported_path = self.card_repository.import_external(selected_path)
+            profile = self.card_repository.load(str(imported_path))
+            self.dialog.preview_profile = profile
+            self.dialog.preview_is_current = True
+            self.dialog.preview_user_name = self.api_client.user_name or self.default_user_name
+            self.generationFinished.emit(json.dumps(profile_payload(profile), ensure_ascii=False))
+            self.cardImported.emit(str(imported_path))
+        except Exception as exc:
+            traceback.print_exc()
+            self.cardImportFailed.emit(f"{type(exc).__name__}: {exc}")
 
     @pyqtSlot()
     def cancel(self) -> None:

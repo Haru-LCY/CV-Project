@@ -76,6 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "userName",
     "historySelect",
     "loadHistoryButton",
+    "importExternalButton",
     "styleSelect",
     "appearanceTraits",
     "appearanceSummary",
@@ -174,6 +175,15 @@ function connectBridgeSignals() {
   bridge.cardSaveFailed.connect((message) => {
     els.statusText.textContent = `保存失败：${message || "unknown error"}`;
   });
+
+  bridge.cardImported.connect((path) => {
+    els.statusText.textContent = `外部角色已导入并加载：${path}`;
+    refreshHistoryCards(path);
+  });
+
+  bridge.cardImportFailed.connect((message) => {
+    els.statusText.textContent = `导入失败：${message || "unknown error"}`;
+  });
 }
 
 function renderInitialState(state) {
@@ -209,6 +219,7 @@ function renderInitialState(state) {
   });
   els.generateButton.addEventListener("click", startGeneration);
   els.loadHistoryButton.addEventListener("click", loadSelectedHistory);
+  els.importExternalButton.addEventListener("click", () => bridge.importExternalCard());
   els.saveCardButton.addEventListener("click", () => bridge.saveCharacterCard());
   els.applyButton.addEventListener("click", () => bridge.applyCharacter());
   els.cancelButton.addEventListener("click", () => bridge.cancel());
@@ -249,6 +260,21 @@ function loadSelectedHistory() {
     return;
   }
   bridge.loadHistoryCard(path);
+}
+
+function refreshHistoryCards(selectedPath = "") {
+  bridge.getHistoryCards((rawCards) => {
+    renderHistoryCards(JSON.parse(rawCards));
+    if (!selectedPath) {
+      return;
+    }
+    const hasSelectedCard = historyCards.some((card) => card.path === selectedPath);
+    if (hasSelectedCard) {
+      els.historySelect.value = selectedPath;
+      els.loadHistoryButton.disabled = false;
+      syncHistoryDropdown();
+    }
+  });
 }
 
 function historyDropdownElements() {
@@ -898,6 +924,8 @@ function setBusy(isBusy) {
   els.saveCardButton.disabled = isBusy || !previewIsCurrent;
   els.applyButton.disabled = isBusy || !previewIsCurrent;
   els.cancelButton.disabled = isBusy;
+  els.importExternalButton.disabled = isBusy;
+  els.loadHistoryButton.disabled = isBusy || !els.historySelect.value;
   document
     .querySelectorAll(
       "input, select, textarea, .chip input, .trait-control input",
