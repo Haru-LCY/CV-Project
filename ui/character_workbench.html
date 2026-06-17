@@ -47,7 +47,13 @@
 
           <label class="field-card" for="styleSelect">
             <span>立绘风格</span>
-            <select id="styleSelect"></select>
+            <div class="select-shell">
+              <select id="styleSelect"></select>
+              <button id="styleSelectButton" type="button" class="custom-select-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="styleSelectMenu">
+                <span>选择立绘风格</span>
+              </button>
+              <div id="styleSelectMenu" class="custom-select-menu" role="listbox" hidden></div>
+            </div>
           </label>
         </div>
       </section>
@@ -80,92 +86,34 @@
         <div id="personalityTraits" hidden></div>
       </section>
 
-      <details id="advancedPanel" class="panel-card advanced-panel">
-        <summary>
-          <span>
-            <em>Advanced</em>
-            <strong>高级设定</strong>
-          </span>
-          <b>添加自定义设定</b>
-        </summary>
+      <section id="advancedPanel" class="custom-settings-page">
+        <header class="custom-settings-header">
+          <span class="panel-eyebrow">Custom</span>
+          <h2>自定义设置</h2>
+        </header>
 
-        <div class="advanced-content">
-          <section class="advanced-block">
-            <h3>互动行为设定</h3>
-            <div class="option-grid">
-              <label class="field-card">
-                <span>主动打招呼频率</span>
-                <select id="greetingFrequency">
-                  <option value="low">低</option>
-                  <option value="medium" selected>中</option>
-                  <option value="high">高</option>
-                </select>
-              </label>
-              <label class="field-card">
-                <span>学习提醒强度</span>
-                <select id="studyReminder">
-                  <option value="off">关闭</option>
-                  <option value="gentle" selected>温和</option>
-                  <option value="strict">严格</option>
-                </select>
-              </label>
-              <label class="field-card">
-                <span>情绪反馈风格</span>
-                <select id="emotionalFeedback">
-                  <option value="comforting">安慰型</option>
-                  <option value="teasing">吐槽型</option>
-                  <option value="companion" selected>陪伴型</option>
-                  <option value="encouraging">鼓励型</option>
-                </select>
-              </label>
-              <label class="field-card">
-                <span>桌宠存在感</span>
-                <select id="presenceLevel">
-                  <option value="quiet">安静陪伴</option>
-                  <option value="occasional" selected>偶尔互动</option>
-                  <option value="frequent">高频互动</option>
-                </select>
-              </label>
+        <div id="customAttributes" class="custom-attributes direct-custom-setting custom-settings-form-card">
+          <label class="field-card">
+            <span>设定类型</span>
+            <div class="select-shell">
+              <select id="customAttributeCategory">
+                <option value="personality">性格</option>
+                <option value="appearance">外貌</option>
+                <option value="worldview">世界观</option>
+                <option value="other">其他</option>
+              </select>
+              <button id="customAttributeCategoryButton" type="button" class="custom-select-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="customAttributeCategoryMenu">
+                <span>性格</span>
+              </button>
+              <div id="customAttributeCategoryMenu" class="custom-select-menu" role="listbox" hidden></div>
             </div>
-          </section>
-
-          <section class="advanced-block">
-            <h3>语言风格设定</h3>
-            <div class="option-grid">
-              <label class="field-card">
-                <span>口癖 / catchphrase</span>
-                <input id="catchphrase" type="text" placeholder="例如：今天也要闪闪发光呢">
-              </label>
-              <label class="field-card">
-                <span>称呼用户</span>
-                <input id="userNickname" type="text" placeholder="小春 / 主人 / 前辈">
-              </label>
-              <label class="field-card">
-                <span>句尾风格</span>
-                <input id="sentenceEnding" type="text" placeholder="呢 / 喔 / 哼">
-              </label>
-              <div class="toggle-row">
-                <label class="toggle-card">
-                  <input id="allowRoast" type="checkbox">
-                  <span>允许毒舌吐槽</span>
-                </label>
-                <label class="toggle-card">
-                  <input id="allowAffection" type="checkbox" checked>
-                  <span>允许撒娇</span>
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <section class="advanced-block custom-attributes-block">
-            <div class="block-title-row">
-              <h3>自定义设定</h3>
-              <button id="addCustomAttributeButton" type="button" class="mint-button">添加自定义设定</button>
-            </div>
-            <div id="customAttributes" class="custom-attributes"></div>
-          </section>
+          </label>
+          <label class="field-card custom-setting-text">
+            <span>自定义设定</span>
+            <textarea id="customAttributeText" placeholder="例如：异色瞳，左眼红色，右眼蓝色。自定义设定优先级最高，会覆盖上方已选外貌或性格。"></textarea>
+          </label>
         </div>
-      </details>
+      </section>
     </section>
 
     <aside class="preview-pane">

@@ -5,6 +5,7 @@ let emotionImageSources = {};
 let historyCards = [];
 let customAttributes = [];
 let latestProfile = null;
+const customSelects = new Map();
 
 const els = {};
 const EMOTIONS = ["happy", "angry", "shy", "sad"];
@@ -65,9 +66,7 @@ const STYLE_DESCRIPTIONS = {
 
 const ATTRIBUTE_CATEGORIES = {
   personality: "性格",
-  behavior: "行为",
-  language: "语言",
-  boundary: "边界",
+  appearance: "外貌",
   worldview: "世界观",
   other: "其他",
 };
@@ -84,17 +83,9 @@ document.addEventListener("DOMContentLoaded", () => {
     "personalityCore",
     "personalityAvailable",
     "advancedPanel",
-    "greetingFrequency",
-    "studyReminder",
-    "emotionalFeedback",
-    "presenceLevel",
-    "catchphrase",
-    "userNickname",
-    "sentenceEnding",
-    "allowRoast",
-    "allowAffection",
-    "addCustomAttributeButton",
     "customAttributes",
+    "customAttributeCategory",
+    "customAttributeText",
     "imagePlaceholder",
     "previewImage",
     "emotionTabs",
@@ -141,11 +132,7 @@ function connectBridgeSignals() {
     setBusy(false);
     const profile = JSON.parse(rawProfile);
     latestProfile = profile;
-    if (Array.isArray(profile.custom_attributes)) {
-      customAttributes = normalizeCustomAttributes(profile.custom_attributes);
-      renderCustomAttributes();
-    }
-    applyAdvancedSettings(profile.advanced_settings);
+    syncProfileToForm(profile);
     previewIsCurrent = true;
     els.applyButton.disabled = false;
     els.saveCardButton.disabled = false;
@@ -208,7 +195,6 @@ function renderInitialState(state) {
     defaults.personality_traits || [],
     defaults.personality_dimensions || {},
   );
-  applyAdvancedSettings(defaults.advanced_settings);
   customAttributes = normalizeCustomAttributes(defaults.custom_attributes || defaults.customAttributes || []);
   renderCustomAttributes();
   renderAppearanceSummary();
@@ -216,22 +202,11 @@ function renderInitialState(state) {
 
   els.userName.addEventListener("input", handleFormChange);
   els.styleSelect.addEventListener("change", handleFormChange);
-  for (const id of [
-    "greetingFrequency",
-    "studyReminder",
-    "emotionalFeedback",
-    "presenceLevel",
-    "catchphrase",
-    "userNickname",
-    "sentenceEnding",
-    "allowRoast",
-    "allowAffection",
-  ]) {
-    els[id].addEventListener("input", handleFormChange);
-    els[id].addEventListener("change", handleFormChange);
-  }
-
-  els.addCustomAttributeButton.addEventListener("click", addCustomAttribute);
+  els.customAttributeCategory.addEventListener("change", handleFormChange);
+  els.customAttributeText.addEventListener("input", () => {
+    renderProfileCard(latestProfile);
+    handleFormChange();
+  });
   els.generateButton.addEventListener("click", startGeneration);
   els.loadHistoryButton.addEventListener("click", loadSelectedHistory);
   els.saveCardButton.addEventListener("click", () => bridge.saveCharacterCard());
@@ -265,7 +240,7 @@ function renderHistoryCards(cards) {
     syncHistoryDropdown();
   };
   renderHistoryDropdownMenu();
-  syncHistoryDropdown();
+  syncAllCustomSelects();
 }
 
 function loadSelectedHistory() {
@@ -277,19 +252,17 @@ function loadSelectedHistory() {
 }
 
 function historyDropdownElements() {
-  return {
-    button: document.getElementById("historySelectButton"),
-    menu: document.getElementById("historySelectMenu"),
-  };
+  return customSelects.get("historySelect") || {};
 }
 
-function renderHistoryDropdownMenu() {
-  const { menu } = historyDropdownElements();
-  if (!menu) {
+function renderCustomSelectMenu(selectId) {
+  const config = customSelects.get(selectId);
+  if (!config) {
     return;
   }
+  const { select, menu } = config;
   menu.innerHTML = "";
-  Array.from(els.historySelect.options).forEach((option) => {
+  Array.from(select.options).forEach((option) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "custom-select-option";
@@ -297,47 +270,67 @@ function renderHistoryDropdownMenu() {
     item.setAttribute("role", "option");
     item.textContent = option.textContent;
     item.addEventListener("click", () => {
-      els.historySelect.value = option.value;
-      els.historySelect.dispatchEvent(new Event("change"));
-      closeHistoryDropdown();
+      select.value = option.value;
+      select.dispatchEvent(new Event("change"));
+      closeCustomSelect(selectId);
     });
     menu.appendChild(item);
   });
+  syncCustomSelect(selectId);
 }
 
-function syncHistoryDropdown() {
-  const { button, menu } = historyDropdownElements();
-  if (!button || !menu) {
+function renderHistoryDropdownMenu() {
+  renderCustomSelectMenu("historySelect");
+}
+
+function syncCustomSelect(selectId) {
+  const config = customSelects.get(selectId);
+  if (!config) {
     return;
   }
-  const selectedOption = els.historySelect.options[els.historySelect.selectedIndex];
-  button.querySelector("span").textContent = selectedOption?.textContent || "选择已保存角色";
-  button.disabled = els.historySelect.disabled;
-  button.classList.toggle("is-disabled", els.historySelect.disabled);
+  const { select, button, menu, placeholder } = config;
+  const selectedOption = select.options[select.selectedIndex];
+  button.querySelector("span").textContent = selectedOption?.textContent || placeholder;
+  button.disabled = select.disabled;
+  button.classList.toggle("is-disabled", select.disabled);
   menu.querySelectorAll(".custom-select-option").forEach((item) => {
-    const selected = item.dataset.value === els.historySelect.value;
+    const selected = item.dataset.value === select.value;
     item.classList.toggle("is-selected", selected);
     item.setAttribute("aria-selected", selected ? "true" : "false");
   });
-  if (els.historySelect.disabled) {
-    closeHistoryDropdown();
+  if (select.disabled) {
+    closeCustomSelect(selectId);
   }
 }
 
-function closeHistoryDropdown() {
-  const { button, menu } = historyDropdownElements();
-  if (!button || !menu) {
+function syncHistoryDropdown() {
+  syncCustomSelect("historySelect");
+}
+
+function syncAllCustomSelects() {
+  customSelects.forEach((_, selectId) => syncCustomSelect(selectId));
+}
+
+function closeCustomSelect(selectId) {
+  const config = customSelects.get(selectId);
+  if (!config) {
     return;
   }
+  const { button, menu } = config;
   button.setAttribute("aria-expanded", "false");
   menu.hidden = true;
 }
 
-function positionHistoryDropdown() {
-  const { button, menu } = historyDropdownElements();
-  if (!button || !menu || menu.hidden) {
+function closeHistoryDropdown() {
+  closeCustomSelect("historySelect");
+}
+
+function positionCustomSelect(selectId) {
+  const config = customSelects.get(selectId);
+  if (!config || config.menu.hidden) {
     return;
   }
+  const { button, menu } = config;
   const rect = button.getBoundingClientRect();
   const gap = 8;
   const viewportPadding = 12;
@@ -353,44 +346,80 @@ function positionHistoryDropdown() {
   menu.style.bottom = openAbove ? `${window.innerHeight - rect.top + gap}px` : "auto";
 }
 
-function openHistoryDropdown() {
-  const { button, menu } = historyDropdownElements();
-  if (!button || !menu || button.disabled) {
-    return;
-  }
-  menu.hidden = false;
-  button.setAttribute("aria-expanded", "true");
-  positionHistoryDropdown();
+function positionHistoryDropdown() {
+  positionCustomSelect("historySelect");
 }
 
-function setupHistoryDropdown() {
-  const { button, menu } = historyDropdownElements();
-  if (!button || !menu) {
+function positionOpenCustomSelects() {
+  customSelects.forEach((_, selectId) => positionCustomSelect(selectId));
+}
+
+function openCustomSelect(selectId) {
+  const config = customSelects.get(selectId);
+  if (!config || config.button.disabled) {
+    return;
+  }
+  const { button, menu } = config;
+  customSelects.forEach((_, otherSelectId) => {
+    if (otherSelectId !== selectId) {
+      closeCustomSelect(otherSelectId);
+    }
+  });
+  menu.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  positionCustomSelect(selectId);
+}
+
+function openHistoryDropdown() {
+  openCustomSelect("historySelect");
+}
+
+function setupCustomSelect(selectId, buttonId, menuId, placeholder) {
+  const select = els[selectId];
+  const button = document.getElementById(buttonId);
+  const menu = document.getElementById(menuId);
+  if (!select || !button || !menu) {
     return;
   }
   if (menu.parentElement !== document.body) {
     document.body.appendChild(menu);
   }
+  customSelects.set(selectId, { select, button, menu, placeholder });
   button.addEventListener("click", () => {
     const willOpen = menu.hidden;
     if (willOpen) {
-      openHistoryDropdown();
+      openCustomSelect(selectId);
     } else {
-      closeHistoryDropdown();
+      closeCustomSelect(selectId);
     }
   });
   button.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      closeHistoryDropdown();
+      closeCustomSelect(selectId);
     }
   });
+  select.addEventListener("change", () => syncCustomSelect(selectId));
+  renderCustomSelectMenu(selectId);
+}
+
+function setupHistoryDropdown() {
+  setupCustomSelect("historySelect", "historySelectButton", "historySelectMenu", "选择已保存角色");
+  setupCustomSelect("styleSelect", "styleSelectButton", "styleSelectMenu", "选择立绘风格");
+  setupCustomSelect(
+    "customAttributeCategory",
+    "customAttributeCategoryButton",
+    "customAttributeCategoryMenu",
+    "性格",
+  );
   document.addEventListener("click", (event) => {
-    if (!button.contains(event.target) && !menu.contains(event.target)) {
-      closeHistoryDropdown();
-    }
+    customSelects.forEach(({ button, menu }, selectId) => {
+      if (!button.contains(event.target) && !menu.contains(event.target)) {
+        closeCustomSelect(selectId);
+      }
+    });
   });
-  window.addEventListener("resize", positionHistoryDropdown);
-  window.addEventListener("scroll", positionHistoryDropdown, true);
+  window.addEventListener("resize", positionOpenCustomSelects);
+  window.addEventListener("scroll", positionOpenCustomSelects, true);
 }
 
 function renderStyleSelect(styles, defaultStyle) {
@@ -402,12 +431,12 @@ function renderStyleSelect(styles, defaultStyle) {
     option.selected = style === defaultStyle;
     els.styleSelect.appendChild(option);
   }
+  renderCustomSelectMenu("styleSelect");
 }
 
 function styleLabel(style) {
   const labels = {
     anime_desktop_pet: "二次元桌宠",
-    transparent_png: "透明 PNG",
     live2d_like: "Live2D 感",
   };
   return labels[style] || style;
@@ -688,6 +717,68 @@ function clampStrength(value) {
   return Math.min(5, Math.max(1, Math.round(number)));
 }
 
+function setSelectValue(select, value) {
+  if (!select || !value) {
+    return;
+  }
+  if (Array.from(select.options).some((option) => option.value === value)) {
+    select.value = value;
+  }
+}
+
+function syncProfileToForm(profile) {
+  if (!profile || typeof profile !== "object") {
+    return;
+  }
+  setSelectValue(els.styleSelect, profile.style);
+  syncCustomSelect("styleSelect");
+  syncAppearanceSelection(profile.appearance_traits || [], profile.appearance_style_dimensions || {});
+  syncPersonalitySelection(profile.personality_traits || [], profile.personality_dimensions || {});
+  customAttributes = normalizeCustomAttributes(profile.custom_attributes || profile.customAttributes || []);
+  renderCustomAttributes();
+  renderAppearanceSummary();
+}
+
+function syncAppearanceSelection(traits, dimensions = {}) {
+  const selected = new Set((Array.isArray(traits) ? traits : []).map(baseTraitName));
+  const strengths = normalizeTraitDimensions(dimensions);
+  els.appearanceTraits.querySelectorAll(".chip input").forEach((input) => {
+    input.checked = selected.has(baseTraitName(input.value));
+  });
+  els.appearanceTraits.querySelectorAll(".style-card.trait-control").forEach((card) => {
+    syncTraitControl(card, selected, strengths);
+  });
+}
+
+function syncPersonalitySelection(traits, dimensions = {}) {
+  const selected = new Set((Array.isArray(traits) ? traits : []).map(baseTraitName));
+  const strengths = normalizeTraitDimensions(dimensions);
+  document.querySelectorAll(".personality-panel .trait-control").forEach((card) => {
+    syncTraitControl(card, selected, strengths);
+  });
+  rebuildPersonalitySections();
+}
+
+function syncTraitControl(card, selected, strengths) {
+  const checkbox = card.querySelector(".trait-toggle");
+  if (!checkbox) {
+    return;
+  }
+  const trait = baseTraitName(checkbox.value);
+  const checked = selected.has(trait);
+  checkbox.checked = checked;
+  card.classList.toggle("is-selected", checked);
+  const slider = card.querySelector("input[type='range']");
+  const output = card.querySelector("output");
+  if (slider) {
+    slider.disabled = !checked;
+    slider.value = String(strengths[trait] || DEFAULT_PERSONALITY_STRENGTH);
+    if (output) {
+      output.textContent = `Lv.${slider.value}`;
+    }
+  }
+}
+
 function selectedValues(container) {
   return Array.from(container.querySelectorAll("input:checked")).map((input) => baseTraitName(input.value));
 }
@@ -718,7 +809,6 @@ function selectedTraitDimensions(container) {
 
 function startGeneration() {
   const attrs = collectCustomAttributes();
-  const advancedSettings = collectAdvancedSettings();
   const payload = {
     user_name: els.userName.value.trim() || "用户",
     appearance_traits: selectedValues(els.appearanceTraits),
@@ -728,7 +818,6 @@ function startGeneration() {
     appearance_style_dimensions: Object.fromEntries(
       selectedTraitDimensions(els.appearanceTraits).filter(([trait]) => APPEARANCE_STRENGTH_GROUPS.size && trait),
     ),
-    advanced_settings: advancedSettings,
     customAttributes: attrs,
     custom_attributes: attrs,
     style: els.styleSelect.value,
@@ -811,7 +900,7 @@ function setBusy(isBusy) {
   els.cancelButton.disabled = isBusy;
   document
     .querySelectorAll(
-      "input, select, textarea, .chip input, .trait-control input, #addCustomAttributeButton, .custom-attribute-card button",
+      "input, select, textarea, .chip input, .trait-control input",
     )
     .forEach((input) => {
       input.disabled = isBusy;
@@ -827,10 +916,9 @@ function setBusy(isBusy) {
     renderHistoryCards(historyCards);
     els.userName.disabled = false;
     els.styleSelect.disabled = false;
-    els.addCustomAttributeButton.disabled = false;
     renderCustomAttributes();
   }
-  syncHistoryDropdown();
+  syncAllCustomSelects();
 }
 
 function showPlaceholder(title, detail = "") {
@@ -867,209 +955,78 @@ function renderProfileCard(profile) {
     const level = personalityDimensions[trait] || DEFAULT_PERSONALITY_STRENGTH;
     return `${trait.replace(/系$/, "")} Lv.${level}`;
   });
-  const attrs = collectCustomAttributes().filter((item) => item.enabled && item.name.trim());
-  const nickname = els.userNickname.value.trim() || els.userName.value.trim() || "用户";
+  const attrs = collectCustomAttributes().filter((item) => item.enabled && item.description.trim());
+  const nickname = els.userName.value.trim() || "用户";
 
   els.characterName.textContent = profile?.name || "未生成";
   els.profileNickname.textContent = nickname || "-";
   els.profileAppearance.textContent = appearance.length ? appearance.slice(0, 8).join(" · ") : "等待选择外貌";
   els.profilePersonality.textContent = personality.length ? personality.join(" / ") : "等待选择性格";
   els.profileCustomAttributes.textContent = attrs.length
-    ? attrs.map((item) => `${item.name} Lv.${item.intensity}`).join(" / ")
+    ? attrs.map((item) => `${ATTRIBUTE_CATEGORIES[item.category] || "其他"}：${item.description}`).join(" / ")
     : "暂无自定义设定";
   els.characterGreeting.textContent = profile?.greeting || "选择设定后，她会在这里准备第一句问候。";
   els.characterPersona.textContent = profile?.persona || "生成后这里会显示完整角色人设。";
-}
-
-function collectAdvancedSettings() {
-  return {
-    behavior: {
-      greetingFrequency: els.greetingFrequency.value,
-      studyReminder: els.studyReminder.value,
-      emotionalFeedback: els.emotionalFeedback.value,
-      presenceLevel: els.presenceLevel.value,
-    },
-    language: {
-      catchphrase: els.catchphrase.value.trim(),
-      userNickname: els.userNickname.value.trim(),
-      sentenceEnding: els.sentenceEnding.value.trim(),
-      allowRoast: els.allowRoast.checked,
-      allowAffection: els.allowAffection.checked,
-    },
-  };
-}
-
-function applyAdvancedSettings(settings) {
-  if (!settings || typeof settings !== "object") {
-    return;
-  }
-  const behavior = settings.behavior || {};
-  const language = settings.language || {};
-  setSelectValue(els.greetingFrequency, behavior.greetingFrequency);
-  setSelectValue(els.studyReminder, behavior.studyReminder);
-  setSelectValue(els.emotionalFeedback, behavior.emotionalFeedback);
-  setSelectValue(els.presenceLevel, behavior.presenceLevel);
-  els.catchphrase.value = language.catchphrase || "";
-  els.userNickname.value = language.userNickname || "";
-  els.sentenceEnding.value = language.sentenceEnding || "";
-  if (typeof language.allowRoast === "boolean") {
-    els.allowRoast.checked = language.allowRoast;
-  }
-  if (typeof language.allowAffection === "boolean") {
-    els.allowAffection.checked = language.allowAffection;
-  }
-}
-
-function setSelectValue(select, value) {
-  if (!value) {
-    return;
-  }
-  if (Array.from(select.options).some((option) => option.value === value)) {
-    select.value = value;
-  }
 }
 
 function normalizeCustomAttributes(values) {
   if (!Array.isArray(values)) {
     return [];
   }
-  return values.map((item) => ({
-    id: String(item.id || cryptoRandomId()),
-    name: String(item.name || ""),
-    category: ATTRIBUTE_CATEGORIES[item.category] ? item.category : "other",
-    intensity: clampStrength(item.intensity),
-    description: String(item.description || ""),
-    enabled: item.enabled !== false,
-  }));
-}
-
-function addCustomAttribute() {
-  customAttributes.push({
-    id: cryptoRandomId(),
-    name: "",
-    category: "personality",
-    intensity: 3,
-    description: "",
-    enabled: true,
-  });
-  renderCustomAttributes();
-  handleFormChange();
+  const enabledItems = values.filter((item) => item && item.enabled !== false);
+  if (!enabledItems.length) {
+    return [];
+  }
+  const first = enabledItems[0] || {};
+  const category = ATTRIBUTE_CATEGORIES[first.category] ? first.category : "other";
+  const description = enabledItems
+    .map((item) => {
+      const name = String(item.name || "").trim();
+      const text = String(item.description || "").trim();
+      return [name, text].filter(Boolean).join("：");
+    })
+    .filter(Boolean)
+    .join("\n");
+  return description
+    ? [
+        {
+          id: String(first.id || "custom-setting"),
+          name: "自定义设定",
+          category,
+          intensity: 5,
+          description,
+          enabled: true,
+        },
+      ]
+    : [];
 }
 
 function renderCustomAttributes() {
-  els.customAttributes.innerHTML = "";
-  if (!customAttributes.length) {
-    const empty = document.createElement("div");
-    empty.className = "personality-empty";
-    empty.textContent = "还没有自定义设定，可以添加占有欲、边界感、世界观等更细的设定。";
-    els.customAttributes.appendChild(empty);
-    return;
-  }
-  for (const attribute of customAttributes) {
-    els.customAttributes.appendChild(createCustomAttributeCard(attribute));
-  }
-}
-
-function createCustomAttributeCard(attribute) {
-  const card = document.createElement("article");
-  card.className = "custom-attribute-card";
-  card.classList.toggle("is-disabled", !attribute.enabled);
-  card.dataset.id = attribute.id;
-
-  const head = document.createElement("div");
-  head.className = "custom-attribute-head";
-
-  const name = document.createElement("input");
-  name.type = "text";
-  name.placeholder = "属性名，例如：占有欲";
-  name.value = attribute.name;
-
-  const category = document.createElement("select");
-  for (const [value, label] of Object.entries(ATTRIBUTE_CATEGORIES)) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    option.selected = value === attribute.category;
-    category.appendChild(option);
-  }
-
-  const enabledLabel = document.createElement("label");
-  enabledLabel.className = "toggle-card";
-  const enabled = document.createElement("input");
-  enabled.type = "checkbox";
-  enabled.checked = attribute.enabled;
-  const enabledText = document.createElement("span");
-  enabledText.textContent = "启用";
-  enabledLabel.append(enabled, enabledText);
-
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "icon-button";
-  remove.title = "删除属性";
-  remove.textContent = "×";
-
-  head.append(name, category, enabledLabel, remove);
-
-  const strength = document.createElement("label");
-  strength.className = "attribute-strength";
-  const strengthText = document.createElement("span");
-  strengthText.textContent = "强度";
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = "1";
-  slider.max = "5";
-  slider.step = "1";
-  slider.value = String(attribute.intensity);
-  const output = document.createElement("output");
-  output.textContent = `Lv.${slider.value}`;
-  strength.append(strengthText, slider, output);
-
-  const description = document.createElement("textarea");
-  description.placeholder = "描述这个属性如何影响角色，例如：会轻微吃醋，但不会过度冒犯用户。";
-  description.value = attribute.description;
-
-  name.addEventListener("input", () => {
-    attribute.name = name.value;
-    handleFormChange();
-  });
-  category.addEventListener("change", () => {
-    attribute.category = category.value;
-    handleFormChange();
-  });
-  enabled.addEventListener("change", () => {
-    attribute.enabled = enabled.checked;
-    card.classList.toggle("is-disabled", !attribute.enabled);
-    handleFormChange();
-  });
-  slider.addEventListener("input", () => {
-    attribute.intensity = clampStrength(slider.value);
-    output.textContent = `Lv.${attribute.intensity}`;
-    renderProfileCard(latestProfile);
-  });
-  slider.addEventListener("change", handleFormChange);
-  description.addEventListener("input", () => {
-    attribute.description = description.value;
-    handleFormChange();
-  });
-  remove.addEventListener("click", () => {
-    customAttributes = customAttributes.filter((item) => item.id !== attribute.id);
-    renderCustomAttributes();
-    handleFormChange();
-  });
-
-  card.append(head, strength, description);
-  return card;
+  const attribute = customAttributes[0] || {};
+  els.customAttributeCategory.value = ATTRIBUTE_CATEGORIES[attribute.category] ? attribute.category : "personality";
+  els.customAttributeText.value = attribute.description || "";
+  syncCustomSelect("customAttributeCategory");
 }
 
 function collectCustomAttributes() {
-  customAttributes = customAttributes.map((item) => ({
-    id: String(item.id || cryptoRandomId()),
-    name: String(item.name || ""),
-    category: ATTRIBUTE_CATEGORIES[item.category] ? item.category : "other",
-    intensity: clampStrength(item.intensity),
-    description: String(item.description || ""),
-    enabled: item.enabled !== false,
-  }));
+  const description = els.customAttributeText.value.trim();
+  if (!description) {
+    customAttributes = [];
+    return customAttributes;
+  }
+  const category = ATTRIBUTE_CATEGORIES[els.customAttributeCategory.value] ? els.customAttributeCategory.value : "other";
+  customAttributes = [
+    {
+      id: "custom-setting",
+      name: "自定义设定",
+      category,
+      intensity: 5,
+      description,
+      enabled: true,
+      priority: "highest",
+      overrides_base_options: true,
+    },
+  ];
   return customAttributes;
 }
 

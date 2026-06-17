@@ -29,7 +29,7 @@ DEFAULT_CHARACTER_OPTIONS = {
         "慵懒系",
     ],
     "identity_traits": [],
-    "styles": ["anime_desktop_pet", "transparent_png", "live2d_like"],
+    "styles": ["anime_desktop_pet", "live2d_like"],
     "defaults": {
         "appearance_traits": ["棕发", "蓝瞳", "中长发", "校服", "清纯"],
         "personality_traits": ["温柔治愈系", "认真优等生系"],

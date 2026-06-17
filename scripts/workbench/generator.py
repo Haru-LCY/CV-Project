@@ -251,20 +251,19 @@ class LocalCharacterGenerator:
             return ""
         category_labels = {
             "personality": "性格",
-            "behavior": "行为",
-            "language": "语言",
-            "boundary": "边界",
+            "appearance": "外貌",
             "worldview": "世界观",
             "other": "其他",
         }
         lines = []
         for item in enabled_attributes:
             category = category_labels.get(item.get("category"), "其他")
-            intensity = item.get("intensity") or 3
             description = str(item.get("description") or "").strip()
-            suffix = f"，说明：{description}" if description else ""
-            lines.append(f"- {item.get('name')}（{category}，强度 {intensity}/5{suffix}）")
-        return "自定义属性：\n" + "\n".join(lines)
+            if description:
+                lines.append(f"- {category}：{description}")
+        if not lines:
+            return ""
+        return "自定义设定（最高优先级；如与外貌、性格、画风或其他选项冲突，必须以这里为准并覆盖前面的选择）：\n" + "\n".join(lines)
 
     def _build_reference_emotion_prompt(self, emotion_label: str, emotion_prompt: str) -> str:
         return f"""

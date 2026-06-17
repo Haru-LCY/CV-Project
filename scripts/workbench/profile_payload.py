@@ -12,10 +12,14 @@ def profile_payload(profile: Any) -> dict:
         "greeting": profile.greeting,
         "image_src": profile_image_src(profile),
         "emotion_images": emotion_images_payload(profile),
+        "appearance_traits": getattr(profile, "appearance_traits", None) or [],
+        "personality_traits": getattr(profile, "personality_traits", None) or [],
+        "identity_traits": getattr(profile, "identity_traits", None) or [],
         "personality_dimensions": getattr(profile, "personality_dimensions", None) or {},
         "appearance_style_dimensions": getattr(profile, "appearance_style_dimensions", None) or {},
         "advanced_settings": getattr(profile, "advanced_settings", None) or {},
         "custom_attributes": getattr(profile, "custom_attributes", None) or [],
+        "style": getattr(profile, "style", None),
     }
 
 
