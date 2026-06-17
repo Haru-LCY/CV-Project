@@ -34,8 +34,21 @@ def main(argv: list[str] | None = None) -> int:
 
     screen = app.primaryScreen()
     screen_geometry = screen.availableGeometry()
-    x = screen_geometry.width() - desktop_pet.width() - 20
-    y = max(0, screen_geometry.height() - int(desktop_pet.height() * desktop_pet.visible_ratio) - 80)
+    display_config = utils.get_config().get("display", {})
+    saved_position = display_config.get("window_position") if isinstance(display_config, dict) else None
+    if isinstance(saved_position, dict) and {"x", "y"} <= saved_position.keys():
+        min_x = screen_geometry.left() - desktop_pet.width() + 80
+        max_x = screen_geometry.right() - 80
+        min_y = screen_geometry.top() - desktop_pet.height() + 80
+        max_y = screen_geometry.bottom() - 80
+        x = min(max(int(saved_position["x"]), min_x), max_x)
+        y = min(max(int(saved_position["y"]), min_y), max_y)
+    else:
+        x = screen_geometry.right() - desktop_pet.width() - 20
+        y = max(
+            screen_geometry.top(),
+            screen_geometry.bottom() - int(desktop_pet.height() * desktop_pet.visible_ratio) - 80,
+        )
     desktop_pet.move(x, y)
     desktop_pet.show()
 

@@ -31,6 +31,8 @@ class DesktopPet(QLabel):
         "standard": {"visible_ratio": 0.6, "text_x_offset": 150, "text_y_offset": 25},
         "full": {"visible_ratio": 1.0, "text_x_offset": 160, "text_y_offset": -100},
     }
+    MIN_AVATAR_SCALE = 0.35
+    MAX_AVATAR_SCALE = 2.5
 
     def __init__(self, api_client: PetApiClient, character: CharacterProfile) -> None:
         super().__init__()
@@ -45,6 +47,10 @@ class DesktopPet(QLabel):
         self.typing_prefix = ""
         self._typing_index = 0
         self.offset: QPoint | None = None
+        self.left_press_pos: QPoint | None = None
+        self.drag_start_global_pos: QPoint | None = None
+        self.drag_start_window_pos: QPoint | None = None
+        self.dragging_pet = False
         self.touch_head = False
         self.head_press_x: int | None = None
         self.llm_worker: ApiWorker | None = None
@@ -67,6 +73,9 @@ class DesktopPet(QLabel):
         self.visible_ratio = float(preset.get("visible_ratio", 0.45))
         self.text_x_offset_default = int(preset.get("text_x_offset", 140))
         self.text_y_offset_default = int(preset.get("text_y_offset", 20))
+        self.avatar_user_scale = self._clamp_avatar_scale(display_config.get("avatar_scale", 1.0))
+        self.avatar_source_pixmap: QPixmap | None = None
+        self.avatar_base_scale_multiplier = 1.0
 
         window_type = Qt.Window if sys.platform == "win32" else Qt.Tool
         self.setWindowFlags(Qt.FramelessWindowHint | window_type | Qt.WindowStaysOnTopHint)
@@ -93,6 +102,9 @@ class DesktopPet(QLabel):
         self.typing_timer = QTimer()
         self.typing_timer.timeout.connect(self._typing_step)
         self.typing_interval = 40
+        self.scale_save_timer = QTimer()
+        self.scale_save_timer.setSingleShot(True)
+        self.scale_save_timer.timeout.connect(self._save_avatar_scale)
         self.top_layer_timer = QTimer()
         self.top_layer_timer.timeout.connect(self.ensure_top_layer)
         self.top_layer_timer.start(3000)
@@ -150,7 +162,17 @@ class DesktopPet(QLabel):
         scale = self._scale_factor()
         return int(value / scale) if scale > 1.0 else value
 
+    def _clamp_avatar_scale(self, value: object) -> float:
+        try:
+            scale = float(value)
+        except (TypeError, ValueError):
+            scale = 1.0
+        return min(max(scale, self.MIN_AVATAR_SCALE), self.MAX_AVATAR_SCALE)
+
     def event(self, event: QEvent) -> bool:
+        native_gesture_event = getattr(QEvent, "NativeGesture", None)
+        if native_gesture_event is not None and event.type() == native_gesture_event and self._handle_native_gesture(event):
+            return True
         if self.screen_worker is None:
             return super().event(event)
         if event.type() == QEvent.WindowActivate:
@@ -170,11 +192,19 @@ class DesktopPet(QLabel):
         return QPixmap.fromImage(qimg)
 
     def _apply_pixmap(self, pixmap: QPixmap, scale_multiplier: float = 1.0) -> None:
+        self.avatar_source_pixmap = QPixmap(pixmap)
+        self.avatar_base_scale_multiplier = scale_multiplier
+        self._render_avatar_pixmap()
+
+    def _render_avatar_pixmap(self) -> None:
+        if self.avatar_source_pixmap is None or self.avatar_source_pixmap.isNull():
+            return
         scale = self._scale_factor()
         divisor = int(scale * 2) if scale > 1.0 else 2
-        target_width = max(1, int(pixmap.width() * scale_multiplier / divisor))
-        target_height = max(1, int(pixmap.height() * scale_multiplier / divisor))
-        pixmap = pixmap.scaled(
+        render_scale = self.avatar_base_scale_multiplier * self.avatar_user_scale
+        target_width = max(1, int(self.avatar_source_pixmap.width() * render_scale / divisor))
+        target_height = max(1, int(self.avatar_source_pixmap.height() * render_scale / divisor))
+        pixmap = self.avatar_source_pixmap.scaled(
             target_width,
             target_height,
             Qt.KeepAspectRatio,
@@ -184,6 +214,65 @@ class DesktopPet(QLabel):
         self.resize(pixmap.size())
         self._position_control_buttons()
         self.update()
+
+    def _handle_native_gesture(self, event: QEvent) -> bool:
+        zoom_gesture = getattr(Qt, "ZoomNativeGesture", None)
+        if zoom_gesture is None:
+            return False
+        gesture_type = event.gestureType() if hasattr(event, "gestureType") else None
+        if gesture_type != zoom_gesture:
+            return False
+        value = float(event.value()) if hasattr(event, "value") else 0.0
+        if value == 0.0:
+            return True
+        anchor = self._event_global_pos(event)
+        self._set_avatar_user_scale(self.avatar_user_scale * (1.0 + value), anchor)
+        return True
+
+    def _event_global_pos(self, event) -> QPoint | None:
+        if hasattr(event, "globalPos"):
+            return event.globalPos()
+        if hasattr(event, "screenPos"):
+            screen_pos = event.screenPos()
+            return screen_pos.toPoint() if hasattr(screen_pos, "toPoint") else QPoint(int(screen_pos.x()), int(screen_pos.y()))
+        return None
+
+    def wheelEvent(self, event) -> None:
+        if event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier):
+            delta = event.angleDelta().y()
+            if delta:
+                factor = 1.0 + (0.08 if delta > 0 else -0.08)
+                self._set_avatar_user_scale(self.avatar_user_scale * factor, event.globalPos())
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+    def _set_avatar_user_scale(self, scale: float, anchor_global_pos: QPoint | None = None) -> None:
+        next_scale = self._clamp_avatar_scale(scale)
+        if abs(next_scale - self.avatar_user_scale) < 0.001:
+            return
+        old_size = self.size()
+        if anchor_global_pos is None or old_size.width() <= 0 or old_size.height() <= 0:
+            anchor_global_pos = self.geometry().center()
+        anchor_local = anchor_global_pos - self.pos()
+        x_ratio = anchor_local.x() / max(1, old_size.width())
+        y_ratio = anchor_local.y() / max(1, old_size.height())
+
+        self.avatar_user_scale = next_scale
+        self._render_avatar_pixmap()
+
+        new_size = self.size()
+        new_x = int(anchor_global_pos.x() - new_size.width() * x_ratio)
+        new_y = int(anchor_global_pos.y() - new_size.height() * y_ratio)
+        self.move(new_x, new_y)
+        self.scale_save_timer.start(250)
+
+    def _save_avatar_scale(self) -> None:
+        config = utils.get_config()
+        display_config = config.setdefault("display", {})
+        display_config["avatar_scale"] = round(self.avatar_user_scale, 3)
+        display_config["window_position"] = {"x": self.x(), "y": self.y()}
+        utils.save_config(config)
 
     def _position_control_buttons(self) -> None:
         if not hasattr(self, "settings_button") or not hasattr(self, "exit_button"):
@@ -251,16 +340,20 @@ class DesktopPet(QLabel):
         if event.button() == Qt.LeftButton:
             if self._tool_choice_clicked(event.pos()):
                 return
+            self.left_press_pos = event.pos()
+            self.drag_start_global_pos = event.globalPos()
+            self.drag_start_window_pos = self.pos()
+            self.dragging_pet = False
             visible_height = int(self.height() * self.visible_ratio)
             if event.y() < visible_height // 2:
                 self.touch_head = True
                 self.head_press_x = event.x()
                 self.setCursor(Qt.OpenHandCursor)
-            elif event.y() > int(visible_height * 0.7):
-                self.begin_text_input()
+            event.accept()
         if event.button() == Qt.MiddleButton:
             self.offset = event.pos()
             self.setCursor(Qt.SizeAllCursor)
+            event.accept()
 
     def begin_text_input(self) -> None:
         self.typing_timer.stop()
@@ -285,6 +378,21 @@ class DesktopPet(QLabel):
         return rect.adjusted(-20, -20, 20, 20).contains(pos)
 
     def on_move(self, event) -> None:
+        if (
+            self.drag_start_global_pos is not None
+            and self.drag_start_window_pos is not None
+            and event.buttons() & Qt.LeftButton
+        ):
+            delta = event.globalPos() - self.drag_start_global_pos
+            if not self.dragging_pet and delta.manhattanLength() >= QApplication.startDragDistance():
+                self.dragging_pet = True
+                self.touch_head = False
+                self.head_press_x = None
+                self.setCursor(Qt.SizeAllCursor)
+            if self.dragging_pet:
+                self.move(self.drag_start_window_pos + delta)
+                event.accept()
+                return
         if self.touch_head and self.head_press_x is not None and event.buttons() & Qt.LeftButton:
             if abs(event.x() - self.head_press_x) > 50:
                 self.start_api_worker("head_touch", f"{self.api_client.user_name}摸了摸你的头")
@@ -297,9 +405,26 @@ class DesktopPet(QLabel):
         if event.button() == Qt.MiddleButton:
             self.offset = None
         if event.button() == Qt.LeftButton:
+            if self.dragging_pet:
+                self._save_window_position()
+            elif self.left_press_pos is not None:
+                visible_height = int(self.height() * self.visible_ratio)
+                text_area_top = int(visible_height * 0.7)
+                if self.left_press_pos.y() > text_area_top and event.y() > text_area_top:
+                    self.begin_text_input()
+            self.left_press_pos = None
+            self.drag_start_global_pos = None
+            self.drag_start_window_pos = None
+            self.dragging_pet = False
             self.touch_head = False
             self.head_press_x = None
         self.setCursor(Qt.ArrowCursor)
+
+    def _save_window_position(self) -> None:
+        config = utils.get_config()
+        display_config = config.setdefault("display", {})
+        display_config["window_position"] = {"x": self.x(), "y": self.y()}
+        utils.save_config(config)
 
     def show_text(self, text: str, x_offset: int | None = None, y_offset: int | None = None, typing: bool = True) -> None:
         self.text_x_offset = self._scaled_value(x_offset if x_offset is not None else self.text_x_offset_default)
