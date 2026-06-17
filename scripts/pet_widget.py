@@ -45,6 +45,7 @@ class DesktopPet(QLabel):
         self.display_text = ""
         self.full_text = ""
         self.typing_prefix = ""
+        self.active_request_display_text = ""
         self._typing_index = 0
         self.offset: QPoint | None = None
         self.left_press_pos: QPoint | None = None
@@ -179,6 +180,9 @@ class DesktopPet(QLabel):
             self.screen_worker.should_capture = False
         elif event.type() == QEvent.WindowDeactivate:
             self.input_mode = False
+            if self._show_active_request_display():
+                self.screen_worker.should_capture = True
+                return super().event(event)
             self.show_text(self.latest_response, typing=True)
             self.screen_worker.should_capture = True
         return super().event(event)
@@ -448,6 +452,20 @@ class DesktopPet(QLabel):
         else:
             self.typing_timer.stop()
 
+    def _request_display_text(self, event: str, text: str) -> str:
+        clean_text = text.strip()
+        if event != "user_text" or not clean_text:
+            return ""
+        return f"【 {self.api_client.user_name} 】\n  「{wrap_text(clean_text)}」"
+
+    def _show_active_request_display(self) -> bool:
+        if not self.active_request_display_text:
+            return False
+        self.typing_timer.stop()
+        self.display_text = self.active_request_display_text
+        self.update()
+        return True
+
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         if not self.display_text:
@@ -607,11 +625,14 @@ class DesktopPet(QLabel):
         if self.llm_worker and self.llm_worker.isRunning():
             if event == "screen_context":
                 return
+        self.active_request_display_text = self._request_display_text(event, text)
+        self._show_active_request_display()
         self.llm_worker = ApiWorker(self.api_client, event, text, screenshot_base64)
         self.llm_worker.finished.connect(self.on_api_result)
         self.llm_worker.start()
 
     def on_api_result(self, result: PetResponse | None, error: str | None) -> None:
+        self.active_request_display_text = ""
         if error or result is None:
             self.show_text(f"【 系统错误 】\n  {error or 'unknown error'}", typing=False)
             return
