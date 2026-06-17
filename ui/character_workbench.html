@@ -29,7 +29,13 @@
 
         <div class="history-bar">
           <label for="historySelect">历史角色</label>
-          <select id="historySelect"></select>
+          <div class="select-shell history-select-shell">
+            <select id="historySelect"></select>
+            <button id="historySelectButton" type="button" class="custom-select-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="historySelectMenu">
+              <span>选择已保存角色</span>
+            </button>
+            <div id="historySelectMenu" class="custom-select-menu" role="listbox" hidden></div>
+          </div>
           <button id="loadHistoryButton" type="button" class="ghost-button" disabled>加载</button>
         </div>
 
@@ -64,14 +70,11 @@
             <span class="panel-eyebrow">Personality</span>
             <h2>性格设定</h2>
           </div>
-          <span class="soft-badge rose">核心性格</span>
+          <span class="soft-badge rose">性格</span>
         </div>
         <div class="personality-section">
-          <h3>核心性格</h3>
+          <h3>性格</h3>
           <div id="personalityCore" class="personality-grid"></div>
-        </div>
-        <div class="personality-section">
-          <h3>可追加性格</h3>
           <div id="personalityAvailable" class="personality-grid"></div>
         </div>
         <div id="personalityTraits" hidden></div>
@@ -83,7 +86,7 @@
             <em>Advanced</em>
             <strong>高级设定</strong>
           </span>
-          <b>行为、语言与自定义属性</b>
+          <b>添加自定义设定</b>
         </summary>
 
         <div class="advanced-content">
@@ -156,8 +159,8 @@
 
           <section class="advanced-block custom-attributes-block">
             <div class="block-title-row">
-              <h3>自定义属性</h3>
-              <button id="addCustomAttributeButton" type="button" class="mint-button">添加自定义属性</button>
+              <h3>自定义设定</h3>
+              <button id="addCustomAttributeButton" type="button" class="mint-button">添加自定义设定</button>
             </div>
             <div id="customAttributes" class="custom-attributes"></div>
           </section>
@@ -169,11 +172,13 @@
       <section class="preview-stage">
         <div class="stage-label">Character Stage</div>
         <div class="stage-glow"></div>
-        <div id="imagePlaceholder" class="image-placeholder">
-          <strong>还没有角色诞生</strong>
-          <span>选择外貌与性格后，点击生成预览。</span>
+        <div class="character-stage-content">
+          <div id="imagePlaceholder" class="image-placeholder">
+            <strong>还没有角色诞生</strong>
+            <span>选择外貌与性格后，生成她的第一张预览。</span>
+          </div>
+          <img id="previewImage" alt="角色预览图" hidden>
         </div>
-        <img id="previewImage" alt="角色预览图" hidden>
         <div class="stage-floor"></div>
       </section>
 
@@ -203,7 +208,7 @@
             <strong id="profilePersonality">-</strong>
           </div>
           <div class="profile-item">
-            <span>自定义属性</span>
+            <span>自定义设定</span>
             <strong id="profileCustomAttributes">-</strong>
           </div>
         </div>

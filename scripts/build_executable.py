@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import plistlib
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +26,9 @@ HIDDEN_IMPORTS = (
     "PyQt5.QtWebChannel",
     "PyQt5.QtWebEngineWidgets",
 )
+MACOS_INFO_PLIST_UPDATES = {
+    "NSCameraUsageDescription": "MurasamePet uses the camera only when you ask it to take a photo.",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -50,6 +55,9 @@ def main(argv: list[str] | None = None) -> int:
         ) from exc
 
     pyinstaller_run(pyinstaller_args)
+    if platform.system() == "Darwin":
+        update_macos_info_plist(project_root, args.name, args.dist_dir)
+        resign_macos_app(project_root, args.name, args.dist_dir)
     print_build_result(project_root, args.name, args.dist_dir, args.onefile)
     return 0
 
@@ -117,6 +125,43 @@ def add_data_arg(source: Path, destination: str) -> str:
 
 def format_command(parts: list[str]) -> str:
     return " ".join(shlex_quote(part) for part in parts)
+
+
+def update_macos_info_plist(project_root: Path, name: str, dist_dir_name: str) -> None:
+    info_plist = project_root / dist_dir_name / f"{name}.app" / "Contents" / "Info.plist"
+    if not info_plist.exists():
+        print(f"Info.plist not found, skipping macOS privacy usage descriptions: {info_plist}")
+        return
+
+    with info_plist.open("rb") as fh:
+        data = plistlib.load(fh)
+
+    changed = False
+    for key, value in MACOS_INFO_PLIST_UPDATES.items():
+        if data.get(key) != value:
+            data[key] = value
+            changed = True
+
+    if not changed:
+        print(f"macOS privacy usage descriptions already present: {info_plist}")
+        return
+
+    with info_plist.open("wb") as fh:
+        plistlib.dump(data, fh, sort_keys=False)
+    print(f"Updated macOS privacy usage descriptions: {info_plist}")
+
+
+def resign_macos_app(project_root: Path, name: str, dist_dir_name: str) -> None:
+    app_path = project_root / dist_dir_name / f"{name}.app"
+    if not app_path.exists():
+        print(f"App bundle not found, skipping macOS code signing: {app_path}")
+        return
+
+    subprocess.run(
+        ["codesign", "--force", "--deep", "--sign", "-", str(app_path)],
+        check=True,
+    )
+    print(f"Re-signed macOS app bundle: {app_path}")
 
 
 def shlex_quote(value: str) -> str:

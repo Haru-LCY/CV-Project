@@ -8,7 +8,7 @@ let latestProfile = null;
 
 const els = {};
 const EMOTIONS = ["happy", "angry", "shy", "sad"];
-const SINGLE_CHOICE_APPEARANCE_GROUPS = new Set(["发色", "瞳色"]);
+const SINGLE_CHOICE_APPEARANCE_GROUPS = new Set(["发色", "瞳色", "发型", "服装"]);
 const APPEARANCE_STRENGTH_GROUPS = new Set(["整体风格"]);
 const DEFAULT_PERSONALITY_STRENGTH = 3;
 
@@ -113,6 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ]) {
     els[id] = document.getElementById(id);
   }
+  setupHistoryDropdown();
 
   new QWebChannel(qt.webChannelTransport, (channel) => {
     bridge = channel.objects.characterWorkbench;
@@ -261,7 +262,10 @@ function renderHistoryCards(cards) {
   els.historySelect.disabled = !historyCards.length;
   els.historySelect.onchange = () => {
     els.loadHistoryButton.disabled = !els.historySelect.value;
+    syncHistoryDropdown();
   };
+  renderHistoryDropdownMenu();
+  syncHistoryDropdown();
 }
 
 function loadSelectedHistory() {
@@ -270,6 +274,123 @@ function loadSelectedHistory() {
     return;
   }
   bridge.loadHistoryCard(path);
+}
+
+function historyDropdownElements() {
+  return {
+    button: document.getElementById("historySelectButton"),
+    menu: document.getElementById("historySelectMenu"),
+  };
+}
+
+function renderHistoryDropdownMenu() {
+  const { menu } = historyDropdownElements();
+  if (!menu) {
+    return;
+  }
+  menu.innerHTML = "";
+  Array.from(els.historySelect.options).forEach((option) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "custom-select-option";
+    item.dataset.value = option.value;
+    item.setAttribute("role", "option");
+    item.textContent = option.textContent;
+    item.addEventListener("click", () => {
+      els.historySelect.value = option.value;
+      els.historySelect.dispatchEvent(new Event("change"));
+      closeHistoryDropdown();
+    });
+    menu.appendChild(item);
+  });
+}
+
+function syncHistoryDropdown() {
+  const { button, menu } = historyDropdownElements();
+  if (!button || !menu) {
+    return;
+  }
+  const selectedOption = els.historySelect.options[els.historySelect.selectedIndex];
+  button.querySelector("span").textContent = selectedOption?.textContent || "选择已保存角色";
+  button.disabled = els.historySelect.disabled;
+  button.classList.toggle("is-disabled", els.historySelect.disabled);
+  menu.querySelectorAll(".custom-select-option").forEach((item) => {
+    const selected = item.dataset.value === els.historySelect.value;
+    item.classList.toggle("is-selected", selected);
+    item.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+  if (els.historySelect.disabled) {
+    closeHistoryDropdown();
+  }
+}
+
+function closeHistoryDropdown() {
+  const { button, menu } = historyDropdownElements();
+  if (!button || !menu) {
+    return;
+  }
+  button.setAttribute("aria-expanded", "false");
+  menu.hidden = true;
+}
+
+function positionHistoryDropdown() {
+  const { button, menu } = historyDropdownElements();
+  if (!button || !menu || menu.hidden) {
+    return;
+  }
+  const rect = button.getBoundingClientRect();
+  const gap = 8;
+  const viewportPadding = 12;
+  const availableBelow = window.innerHeight - rect.bottom - viewportPadding - gap;
+  const availableAbove = rect.top - viewportPadding - gap;
+  const openAbove = availableBelow < 180 && availableAbove > availableBelow;
+  const maxHeight = Math.max(128, Math.min(232, openAbove ? availableAbove : availableBelow));
+
+  menu.style.width = `${rect.width}px`;
+  menu.style.left = `${Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - rect.width - viewportPadding))}px`;
+  menu.style.maxHeight = `${maxHeight}px`;
+  menu.style.top = openAbove ? "auto" : `${rect.bottom + gap}px`;
+  menu.style.bottom = openAbove ? `${window.innerHeight - rect.top + gap}px` : "auto";
+}
+
+function openHistoryDropdown() {
+  const { button, menu } = historyDropdownElements();
+  if (!button || !menu || button.disabled) {
+    return;
+  }
+  menu.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  positionHistoryDropdown();
+}
+
+function setupHistoryDropdown() {
+  const { button, menu } = historyDropdownElements();
+  if (!button || !menu) {
+    return;
+  }
+  if (menu.parentElement !== document.body) {
+    document.body.appendChild(menu);
+  }
+  button.addEventListener("click", () => {
+    const willOpen = menu.hidden;
+    if (willOpen) {
+      openHistoryDropdown();
+    } else {
+      closeHistoryDropdown();
+    }
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeHistoryDropdown();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!button.contains(event.target) && !menu.contains(event.target)) {
+      closeHistoryDropdown();
+    }
+  });
+  window.addEventListener("resize", positionHistoryDropdown);
+  window.addEventListener("scroll", positionHistoryDropdown, true);
 }
 
 function renderStyleSelect(styles, defaultStyle) {
@@ -513,8 +634,8 @@ function rebuildPersonalitySections() {
       availableCount += 1;
     }
   }
-  ensureEmptyPersonalityState(els.personalityCore, coreCount, "还没有核心性格，先从下方追加一个吧。");
-  ensureEmptyPersonalityState(els.personalityAvailable, availableCount, "可追加性格已全部启用。");
+  ensureEmptyPersonalityState(els.personalityCore, coreCount, "");
+  ensureEmptyPersonalityState(els.personalityAvailable, availableCount, "性格已全部启用。");
 }
 
 function ensureEmptyPersonalityState(container, count, text) {
@@ -522,7 +643,7 @@ function ensureEmptyPersonalityState(container, count, text) {
   if (old) {
     old.remove();
   }
-  if (count > 0) {
+  if (count > 0 || !text) {
     return;
   }
   const empty = document.createElement("div");
@@ -709,6 +830,7 @@ function setBusy(isBusy) {
     els.addCustomAttributeButton.disabled = false;
     renderCustomAttributes();
   }
+  syncHistoryDropdown();
 }
 
 function showPlaceholder(title, detail = "") {
@@ -719,7 +841,7 @@ function showPlaceholder(title, detail = "") {
   const strong = document.createElement("strong");
   strong.textContent = title;
   const span = document.createElement("span");
-  span.textContent = detail || "选择外貌与性格后，点击生成预览。";
+  span.textContent = detail || "选择外貌与性格后，生成她的第一张预览。";
   els.imagePlaceholder.append(strong, span);
 }
 
@@ -754,7 +876,7 @@ function renderProfileCard(profile) {
   els.profilePersonality.textContent = personality.length ? personality.join(" / ") : "等待选择性格";
   els.profileCustomAttributes.textContent = attrs.length
     ? attrs.map((item) => `${item.name} Lv.${item.intensity}`).join(" / ")
-    : "暂无自定义属性";
+    : "暂无自定义设定";
   els.characterGreeting.textContent = profile?.greeting || "选择设定后，她会在这里准备第一句问候。";
   els.characterPersona.textContent = profile?.persona || "生成后这里会显示完整角色人设。";
 }
@@ -839,7 +961,7 @@ function renderCustomAttributes() {
   if (!customAttributes.length) {
     const empty = document.createElement("div");
     empty.className = "personality-empty";
-    empty.textContent = "还没有自定义属性，可以添加占有欲、边界感、世界观等更细的设定。";
+    empty.textContent = "还没有自定义设定，可以添加占有欲、边界感、世界观等更细的设定。";
     els.customAttributes.appendChild(empty);
     return;
   }
