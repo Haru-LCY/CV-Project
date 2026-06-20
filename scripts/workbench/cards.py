@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import traceback
 import uuid
 from pathlib import Path
@@ -23,6 +24,30 @@ class CharacterCardRepository:
         path = cards_dir / filename
         self.write(path, self.character_card_payload(profile))
         return path
+
+    def import_external(self, source: str) -> Path:
+        source_path = Path(source).expanduser().resolve()
+        if not source_path.is_file():
+            raise FileNotFoundError(f"角色卡文件不存在：{source}")
+        if source_path.suffix.lower() != ".json":
+            raise ValueError("只能导入 .json 角色卡文件")
+
+        with source_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("角色卡 JSON 顶层必须是对象")
+
+        profile = self.profile_from_card(data)
+        cards_dir = self.cards_dir()
+        cards_dir.mkdir(parents=True, exist_ok=True)
+        resolved_cards_dir = cards_dir.resolve()
+        if source_path.is_relative_to(resolved_cards_dir):
+            return source_path
+
+        filename = self.safe_card_filename(profile.name, profile.character_id)
+        target_path = self.available_card_path(cards_dir / filename)
+        shutil.copy2(source_path, target_path)
+        return target_path
 
     def load(self, path: str) -> GeneratedCharacterProfile:
         card_path = self.resolve_card_path(path)
@@ -65,6 +90,15 @@ class CharacterCardRepository:
         safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", name or "character").strip("._")
         safe_id = re.sub(r"[^\w.-]+", "_", character_id or uuid.uuid4().hex[:12]).strip("._")
         return f"{safe_name or 'character'}_{safe_id or uuid.uuid4().hex[:12]}.json"
+
+    def available_card_path(self, path: Path) -> Path:
+        if not path.exists():
+            return path
+        for index in range(2, 1000):
+            candidate = path.with_name(f"{path.stem}_{index}{path.suffix}")
+            if not candidate.exists():
+                return candidate
+        raise FileExistsError(f"无法为角色卡生成未占用文件名：{path.name}")
 
     def history_card_summaries(self) -> list[dict]:
         cards_dir = self.cards_dir()

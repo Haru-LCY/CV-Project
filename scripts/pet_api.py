@@ -207,6 +207,7 @@ class PetApiClient:
         current_model = model
         current_tool_choice = tool_choice
         max_tool_rounds = 6
+        tool_followup_text = self._tool_followup_text(event, text, messages)
 
         for _ in range(max_tool_rounds):
             response = self._post_chat(
@@ -247,16 +248,19 @@ class PetApiClient:
                             "role": "user",
                             "content": [
                                 {"type": "image_url", "image_url": {"url": execution.image_url}},
-                                {"type": "text", "text": execution.image_prompt or "这是工具返回的图片，请继续回答用户。"},
+                                {"type": "text", "text": tool_followup_text},
                             ],
                         }
                     )
+                tool_result = dict(execution.result)
+                if execution.image_url and execution.image_prompt:
+                    tool_result.setdefault("image_prompt", execution.image_prompt)
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": str(tool_call.get("id") or execution.name),
                         "name": execution.name,
-                        "content": json.dumps(execution.result, ensure_ascii=False),
+                        "content": json.dumps(tool_result, ensure_ascii=False),
                     }
                 )
             messages.extend(image_messages)
@@ -283,6 +287,28 @@ class PetApiClient:
             pending_action=pending_action,
             desktop_summary_fallback=desktop_summary_fallback,
         )
+
+    def _tool_followup_text(self, event: str, text: str, messages: list[dict]) -> str:
+        clean_text = text.strip()
+        if clean_text:
+            return clean_text
+        if messages:
+            content = messages[-1].get("content")
+            extracted = self._message_text(content).strip()
+            if extracted:
+                return extracted
+        return event or "请继续处理用户请求。"
+
+    def _message_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "\n".join(parts)
 
     def _remember_turn(self, event: str, user_text: str, reply_text: str, desktop_summary: str = "") -> None:
         short_term_user_text = user_text or event
