@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="MurasamePet 是一个能够观察桌面、调用工具、保留记忆并持续陪伴你的智能桌面角色。"
+      content="Moe Traits 2 Companion 是一个能够观察桌面、调用工具、保留记忆并持续陪伴你的智能桌面角色。"
     />
     <meta name="theme-color" content="#101225" />
-    <title>MurasamePet — 看得见，也记得住的智能桌宠</title>
+    <title>Moe Traits 2 Companion — 看得见，也记得住的智能桌宠</title>
     <link rel="icon" href="./assets/images/murasame-standee.png" type="image/png" />
     <link rel="stylesheet" href="./styles.css" />
     <script src="./app.js" defer></script>
@@ -21,11 +21,13 @@
     <div class="noise" aria-hidden="true"></div>
 
     <header class="site-header">
-      <a class="brand" href="#" aria-label="MurasamePet 首页">
+      <a class="brand" href="#" aria-label="Moe Traits 2 Companion 首页">
         <span class="brand-mark" aria-hidden="true">M</span>
-        <span>MurasamePet</span>
+        <span>Moe Traits 2 Companion</span>
       </a>
       <nav class="site-nav" aria-label="主导航">
+        <a href="#customization">定制</a>
+        <a href="#expressions">表情</a>
         <a href="#features">功能</a>
         <a href="#technology">技术</a>
         <a
@@ -50,13 +52,28 @@
             AI × Computer Vision × Desktop Agent
           </div>
           <h1>
-            一个真正生活在
-            <span>你桌面上的 AI</span>
+            从一组萌属性
+            <span>到一个懂你的 AI 伙伴</span>
           </h1>
           <p class="hero-lead">
-            她能看见你的屏幕，理解你正在做什么，调用工具帮你完成任务，
-            也会记住你们共同经历过的事。
+            选择几种萌属性，她便从设定中诞生，来到桌面成为真正懂你的伙伴。
+            她会看见、理解并陪伴你，也能调用工具帮你完成事情，记住你们共同经历的每一天。
           </p>
+          <div class="platform-support" aria-label="支持的平台">
+            <span class="platform-label">双端支持</span>
+            <span class="platform-chip">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M16.7 12.9c0-2.5 2.1-3.7 2.2-3.8a4.8 4.8 0 0 0-3.8-2c-1.6-.2-3.1 1-3.9 1s-2-1-3.4-1c-1.8 0-3.5 1.1-4.5 2.7-1.9 3.3-.5 8.3 1.4 11 .9 1.3 2 2.7 3.5 2.6 1.4-.1 2-1 3.7-1s2.2 1 3.7 1c1.5 0 2.5-1.3 3.4-2.6a11.5 11.5 0 0 0 1.6-3.3 4.5 4.5 0 0 1-3.9-4.6ZM14 5.4A4.6 4.6 0 0 0 15.1 2a4.7 4.7 0 0 0-3.1 1.6 4.3 4.3 0 0 0-1.1 3.2A3.9 3.9 0 0 0 14 5.4Z" />
+              </svg>
+              macOS
+            </span>
+            <span class="platform-chip">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 5.4 10.3 4v7H3V5.4Zm8.3-1.6L21 2.4V11h-9.7V3.8ZM3 12h7.3v7L3 17.6V12Zm8.3 0H21v8.6l-9.7-1.4V12Z" />
+              </svg>
+              Windows
+            </span>
+          </div>
           <div class="hero-actions">
             <a class="button button--primary" href="#features">
               查看功能演示
@@ -80,7 +97,7 @@
           </div>
           <dl class="hero-stats" aria-label="项目能力概览">
             <div>
-              <dt>7</dt>
+              <dt>8</dt>
               <dd>核心能力演示</dd>
             </div>
             <div>
@@ -94,7 +111,7 @@
           </dl>
         </div>
 
-        <div class="hero-visual" aria-label="MurasamePet 桌面角色">
+        <div class="hero-visual" aria-label="Moe Traits 2 Companion 桌面角色">
           <div class="orbit orbit--outer" aria-hidden="true"></div>
           <div class="orbit orbit--inner" aria-hidden="true"></div>
           <div class="status-pill status-pill--vision">
@@ -118,7 +135,7 @@
           <img
             class="hero-character"
             src="./assets/images/murasame-standee.png"
-            alt="白发水手服 MurasamePet 角色立绘"
+            alt="白发水手服 Moe Traits 2 Companion 角色立绘"
             width="399"
             height="781"
           />
@@ -133,6 +150,92 @@
         <div><span>04</span>长期记忆</div>
       </section>
 
+      <section class="customization section" id="customization">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">MOE TRAITS CREATOR</p>
+            <h2>从萌属性开始，创造独属于你的角色</h2>
+          </div>
+          <p>
+            自由组合外貌、性格与身份设定。每一种选择都会参与角色塑造，
+            从立绘、表达方式到相处风格，让她真正成为只属于你的 AI 伙伴。
+          </p>
+        </div>
+        <article class="customization-demo">
+          <button
+            class="video-trigger customization-video"
+            type="button"
+            data-video="./assets/videos/character-card.mp4"
+            data-title="定制萌属性"
+            aria-label="播放：定制萌属性"
+          >
+            <img
+              src="./assets/posters/character-card.webp"
+              alt=""
+              width="1280"
+              height="835"
+              loading="lazy"
+            />
+            <span class="play-button" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z" /></svg>
+            </span>
+            <span class="duration">00:18</span>
+          </button>
+          <div class="customization-meta">
+            <span>01</span>
+            <div>
+              <h3>定制萌属性</h3>
+              <p>挑选银白发、傲娇系、大小姐等萌属性，生成角色立绘、个性与专属角色卡。</p>
+            </div>
+            <strong>外貌 · 性格 · 身份</strong>
+          </div>
+        </article>
+      </section>
+
+      <section class="expressions section" id="expressions">
+        <div class="expression-copy">
+          <p class="section-kicker">LIVE EXPRESSION</p>
+          <h2>回应不只是一句话，也有表情</h2>
+          <p>
+            角色会根据对话情绪实时切换立绘差分。点击下方状态，预览开心、生气、害羞与伤心四种反馈。
+          </p>
+          <div class="expression-tabs" role="tablist" aria-label="选择角色表情">
+            <button class="expression-tab is-active" type="button" role="tab" aria-selected="true" data-expression="happy">
+              <span>01</span>开心
+            </button>
+            <button class="expression-tab" type="button" role="tab" aria-selected="false" data-expression="angry">
+              <span>02</span>生气
+            </button>
+            <button class="expression-tab" type="button" role="tab" aria-selected="false" data-expression="shy">
+              <span>03</span>害羞
+            </button>
+            <button class="expression-tab" type="button" role="tab" aria-selected="false" data-expression="sad">
+              <span>04</span>伤心
+            </button>
+          </div>
+          <p class="expression-note">
+            <span aria-hidden="true"></span>
+            当前状态：<strong id="expression-name">开心</strong>
+          </p>
+        </div>
+        <div class="expression-stage" aria-live="polite">
+          <div class="expression-glow" aria-hidden="true"></div>
+          <div class="expression-message">
+            <span>EMOTION · <strong id="expression-code">HAPPY</strong></span>
+            <p id="expression-line">今天也一起把事情做好吧。</p>
+          </div>
+          <img
+            id="expression-character"
+            src="./assets/images/emotions/happy.png"
+            alt="角色开心表情差分"
+            width="398"
+            height="785"
+            loading="lazy"
+          />
+          <div class="expression-shadow" aria-hidden="true"></div>
+        </div>
+      </section>
+
       <section class="features section" id="features">
         <div class="section-heading">
           <div>
@@ -140,7 +243,7 @@
             <h2>不止是桌宠，更是你的桌面搭档</h2>
           </div>
           <p>
-            从感知、理解到行动，MurasamePet 将多模态模型与本地工具连接起来，
+            从感知、理解到行动，Moe Traits 2 Companion 将多模态模型与本地工具连接起来，
             让角色真正参与到你的桌面生活中。
           </p>
         </div>
@@ -175,7 +278,7 @@
                 <span class="duration">00:10</span>
               </button>
               <div class="feature-card-copy">
-                <span class="card-index">01</span>
+                <span class="card-index">02</span>
                 <div>
                   <h4>自由移动与缩放</h4>
                   <p>拖动角色到桌面的任意位置，并随时调整到适合你的尺寸。</p>
@@ -183,46 +286,6 @@
               </div>
             </article>
 
-            <article class="feature-card">
-              <button
-                class="video-trigger"
-                type="button"
-                data-video="./assets/videos/character-card.mp4"
-                data-title="角色卡与个性定制"
-                aria-label="播放：角色卡与个性定制"
-              >
-                <img
-                  src="./assets/posters/character-card.webp"
-                  alt=""
-                  width="1280"
-                  height="835"
-                  loading="lazy"
-                />
-                <span class="play-button" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5V7Z" /></svg>
-                </span>
-                <span class="duration">00:18</span>
-              </button>
-              <div class="feature-card-copy">
-                <span class="card-index">02</span>
-                <div>
-                  <h4>角色卡与个性定制</h4>
-                  <p>组合外貌、性格与自定义设定，生成属于你的专属角色。</p>
-                </div>
-              </div>
-            </article>
-          </div>
-        </div>
-
-        <div class="feature-group">
-          <div class="group-label">
-            <span>02</span>
-            <div>
-              <p>VISION &amp; ACTION</p>
-              <h3>感知与行动</h3>
-            </div>
-          </div>
-          <div class="feature-grid feature-grid--three">
             <article class="feature-card">
               <button
                 class="video-trigger"
@@ -314,7 +377,7 @@
 
         <div class="feature-group">
           <div class="group-label">
-            <span>03</span>
+            <span>02</span>
             <div>
               <p>IDENTITY &amp; MEMORY</p>
               <h3>持续的陪伴</h3>
@@ -387,7 +450,7 @@
           <p class="section-kicker">BEHIND THE CHARACTER</p>
           <h2>让角色真正进入你的数字生活</h2>
           <p>
-            MurasamePet 不是一个停留在聊天窗口里的角色。她通过桌面视觉获得上下文，
+            Moe Traits 2 Companion 不是一个停留在聊天窗口里的角色。她通过桌面视觉获得上下文，
             由 Agent 编排本地工具执行任务，再用记忆系统维持长期、连贯的关系。
           </p>
           <a
@@ -402,7 +465,7 @@
             </svg>
           </a>
         </div>
-        <div class="technology-map" aria-label="MurasamePet 技术流程">
+        <div class="technology-map" aria-label="Moe Traits 2 Companion 技术流程">
           <div class="tech-node tech-node--vision">
             <span>01</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -461,10 +524,10 @@
     <footer class="site-footer">
       <a class="brand" href="#">
         <span class="brand-mark" aria-hidden="true">M</span>
-        <span>MurasamePet</span>
+        <span>Moe Traits 2 Companion</span>
       </a>
       <p>看得见，也记得住的智能桌面角色。</p>
-      <p>© <span id="current-year">2026</span> MurasamePet</p>
+      <p>© <span id="current-year">2026</span> Moe Traits 2 Companion</p>
     </footer>
 
     <dialog class="video-modal" aria-labelledby="video-modal-title">
