@@ -1182,6 +1182,58 @@ svg {
   font-size: 13px;
 }
 
+.postscript {
+  margin-top: 26px;
+  margin-bottom: 70px;
+}
+
+.postscript-card {
+  padding: 46px 54px;
+  border: 1px solid rgba(28, 32, 65, 0.09);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(247, 243, 255, 0.78)),
+    var(--panel);
+  box-shadow: 0 24px 64px rgba(31, 34, 69, 0.06);
+}
+
+.postscript-card h2 {
+  max-width: 980px;
+  margin: 12px 0 22px;
+  font-family: var(--heading);
+  font-size: clamp(30px, 3.6vw, 46px);
+  letter-spacing: -0.05em;
+  line-height: 1.22;
+}
+
+.postscript-card > p {
+  max-width: 980px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.95;
+}
+
+.postscript-card > p + p {
+  margin-top: 15px;
+}
+
+.postscript-meta {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(28, 32, 65, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.postscript-meta p {
+  margin: 0;
+}
+
+.postscript-meta p + p {
+  margin-top: 4px;
+}
+
 .site-footer {
   width: var(--container);
   min-height: 105px;
@@ -1443,6 +1495,10 @@ svg {
     justify-self: start;
   }
 
+  .postscript-card {
+    padding: 40px 36px;
+  }
+
   .site-footer {
     grid-template-columns: 1fr 1fr;
   }
@@ -1675,6 +1731,21 @@ svg {
 
   .site-footer .brand span:last-child {
     display: none;
+  }
+
+  .postscript {
+    margin-top: 18px;
+    margin-bottom: 56px;
+  }
+
+  .postscript-card {
+    padding: 34px 24px;
+    border-radius: 22px;
+  }
+
+  .postscript-card h2 {
+    margin-bottom: 18px;
+    font-size: clamp(26px, 8vw, 34px);
   }
 
   .video-modal {
