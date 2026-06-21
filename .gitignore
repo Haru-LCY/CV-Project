@@ -193,5 +193,5 @@ tests
 client.png
 
 /codex/
-/experiments/
+# /experiments/
 /results/

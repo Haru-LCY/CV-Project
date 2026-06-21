@@ -1,0 +1,25 @@
+{
+  "python_command": "uv run --no-sync python",
+  "expression": {
+    "reference_priority": ["neutral", "idle", "happy", "display"],
+    "similarity_resize": [128, 128],
+    "average_hash_size": 16,
+    "method": "alpha-cropped centered RGB cosine plus average-hash similarity"
+  },
+  "background": {
+    "source_input_dir": "experiments/input/white_background",
+    "naive_white_min_value": 245,
+    "naive_white_max_chroma": 24,
+    "project_pipeline": "scripts/workbench/image_processing.py"
+  },
+  "generation": {
+    "count": 20,
+    "timeout_seconds": 180,
+    "max_reference_workers": 1,
+    "output_dir": "results/experiments/generated_image_sets"
+  },
+  "runtime": {
+    "manual_only": true,
+    "placeholder_csv": "results/experiments/manual_templates/runtime_interaction_manual_entry.csv"
+  }
+}
